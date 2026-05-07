@@ -162,7 +162,7 @@
         <tbody id="tabela-estoque-corpo" style="text-align:center;"></tbody>
     </table>
     <div style="display:flex; gap:10px; margin-top:10px;">
-        <button onclick="salvarNoGist()" style="flex:1; background: #6f42c1; color: white; padding: 12px; border: none; border-radius: 5px; cursor:pointer; font-weight: bold;">☁️ SALVAR ALTERAÇÕES ONLINE</button>
+        <button id="btn-salvar-estoque" onclick="salvarAlteracoesEstoque()" style="flex:1; background: #6f42c1; color: white; padding: 12px; border: none; border-radius: 5px; cursor:pointer; font-weight: bold;">☁️ SALVAR ALTERAÇÕES ONLINE</button>
     </div>
 </div>
 
@@ -204,9 +204,9 @@
 <div id="print-area"></div>
 
 <script>
-    // CONFIGURAÇÃO GITHUB GIST (ONLINE)
-    const GITHUB_TOKEN = "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";
-    const GIST_ID = "b694eb55a59d94d4db42c5ad5ecf7ff2";
+    // CREDENCIAIS REMOVIDAS DO CÓDIGO (Preencha aqui para funcionar)
+    const GITHUB_TOKEN = "SEU_TOKEN_AQUI";
+    const GIST_ID = "SEU_ID_DO_GIST_AQUI";
 
     // ESTRUTURA DE DADOS GLOBAL
     let dbState = {
@@ -221,6 +221,7 @@
     // --- FUNÇÕES DE COMUNICAÇÃO COM GITHUB ---
 
     async function carregarDadosOnline() {
+        if(GITHUB_TOKEN === "SEU_TOKEN_AQUI") return;
         try {
             const response = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
                 headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
@@ -233,11 +234,14 @@
             atualizarUIStatus();
         } catch (err) {
             console.error("Erro ao carregar dados do Gist:", err);
-            alert("Erro ao conectar com o banco online. Verifique sua internet.");
         }
     }
 
     async function salvarNoGist() {
+        if(GITHUB_TOKEN === "SEU_TOKEN_AQUI") {
+            alert("Token não configurado.");
+            return;
+        }
         try {
             const response = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
                 method: 'PATCH',
@@ -261,6 +265,20 @@
         }
     }
 
+    // Função específica do botão do estoque para dar feedback visual
+    async function salvarAlteracoesEstoque() {
+        const btn = document.getElementById('btn-salvar-estoque');
+        btn.innerText = "⏳ SALVANDO...";
+        btn.disabled = true;
+        await salvarNoGist();
+        btn.innerText = "✅ SALVO COM SUCESSO!";
+        setTimeout(() => {
+            btn.innerText = "☁️ SALVAR ALTERAÇÕES ONLINE";
+            btn.disabled = false;
+        }, 2000);
+        renderizarPDV(); // Atualiza cards do PDV com novos valores/estoque
+    }
+
     // Inicialização
     function init() {
         const hoje = new Date().toISOString().split('T')[0];
@@ -272,7 +290,7 @@
     }
     init();
 
-    // --- FUNÇÕES DO PDV (ADAPTADAS PARA dbState) ---
+    // --- FUNÇÕES DO PDV ---
 
     function fluxoCaixa() {
         const btn = document.getElementById('btn-toggle-loja');
@@ -429,14 +447,13 @@
             metodo: (metodo === "CRÉDITO") ? `CRÉDITO ${parcelas}X` : metodo
         };
 
-        // Atualiza Estoque em Memória
         venda.itens.forEach(item => { 
             const p = dbState.produtos.find(prod => prod.nome === item.nome); 
             if (p) { p.estoque -= item.qtd; } 
         });
 
         dbState.vendas.push(venda);
-        salvarNoGist(); // Persiste online
+        salvarNoGist();
 
         if(confirm("Imprimir Nota?")) imprimirCupom(venda);
         carrinho = []; 
@@ -452,16 +469,12 @@
     function renderizarRelatorio() {
         const dInicio = document.getElementById('filtro-data-inicio').value;
         const dFim = document.getElementById('filtro-data-fim').value;
-
         const vds = dbState.vendas.filter(v => { const dv = v.dataObj || v.data.split('/').reverse().join('-'); return dv >= dInicio && dv <= dFim; });
         const gst = dbState.gastos.filter(g => { const dg = g.dataObj || g.data.split('/').reverse().join('-'); return dg >= dInicio && dg <= dFim; });
-        
         const bruto = money(vds.reduce((a,b)=>a+(b.total || 0), 0));
         const lucro = money(vds.reduce((a,b)=>a+(b.lucro || 0), 0));
         const gastos = money(gst.reduce((a,b)=>a+(b.valor || 0), 0));
-
         document.getElementById('resumo-html-v8').innerHTML = `RESUMO DO PERÍODO:\nLÍQUIDO: R$ ${bruto.toFixed(2)}\nLUCRO: R$ ${lucro.toFixed(2)}\nGASTOS: R$ ${gastos.toFixed(2)}`;
-
         let htmlLista = `<h3>Vendas Detalhadas</h3>` + vds.slice().reverse().map(v => `
             <div class="venda-card">
                 <b>#${v.id} - ${v.data} ${v.hora}</b> | R$ ${v.total.toFixed(2)}
@@ -516,9 +529,7 @@
 
     function updateMemDirect(nome, campo, valor) {
         const p = dbState.produtos.find(i => i.nome === nome);
-        if(p) {
-            p[campo] = parseFloat(valor);
-        }
+        if(p) { p[campo] = parseFloat(valor); }
     }
 
     function cadastrarNovo() {
@@ -561,23 +572,16 @@
         const dInicio = document.getElementById('rep-data-inicio').value;
         const dFim = document.getElementById('rep-data-fim').value;
         const vds = dbState.vendas.filter(v => { const dv = v.dataObj || v.data.split('/').reverse().join('-'); return dv >= dInicio && dv <= dFim; });
-        
-        let custoForn = 0;
-        let lucroReal = 0;
-        let totalBruto = 0;
-
+        let custoForn = 0, lucroReal = 0, totalBruto = 0;
         vds.forEach(v => {
             totalBruto += v.total;
             let custoVenda = v.itens.reduce((acc, it) => acc + (it.custo * it.qtd), 0);
             custoForn += custoVenda;
         });
-
         lucroReal = totalBruto - custoForn;
-
         document.getElementById('fin-custo-total').innerText = "R$ " + money(custoForn).toFixed(2);
         document.getElementById('fin-lucro-total').innerText = "R$ " + money(lucroReal).toFixed(2);
         document.getElementById('fin-vendas-brutas').innerText = "R$ " + money(totalBruto).toFixed(2);
-
         const alertasCont = document.getElementById('lista-alertas-reposicao');
         alertasCont.innerHTML = "<h3>Estoque Crítico (Reposição Imediata)</h3>";
         dbState.produtos.filter(p => p.estoque <= 5).forEach(p => {
@@ -590,12 +594,9 @@
     }
 
     function limparHistoricoGeral() {
-        if(confirm("ATENÇÃO: Isso apagará todas as vendas e gastos permanentemente do banco online. Continuar?")) {
-            dbState.vendas = [];
-            dbState.gastos = [];
-            salvarNoGist();
-            renderizarGestaoReposicao();
-            alert("Histórico limpo!");
+        if(confirm("ATENÇÃO: Limpar permanentemente?")) {
+            dbState.vendas = []; dbState.gastos = [];
+            salvarNoGist(); renderizarGestaoReposicao();
         }
     }
 

@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>JC PESCADOS - PDV V8.8 ULTRA + DB FULL</title>
+    <title>JC PESCADOS - PDV V8.8 ONLINE GIST</title>
     <style>
         :root { --azul: #0056b3; --azul-escuro: #003d80; --sucesso: #28a745; --perigo: #dc3545; --info: #17a2b8; --alerta: #ffc107; }
         body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -162,8 +162,7 @@
         <tbody id="tabela-estoque-corpo" style="text-align:center;"></tbody>
     </table>
     <div style="display:flex; gap:10px; margin-top:10px;">
-        <button onclick="exportarBackup()" style="flex:1; background: #6c757d; color: white; padding: 12px; border: none; border-radius: 5px; cursor:pointer; font-weight: bold;">📥 EXPORTAR BACKUP (ARQUIVO)</button>
-        <button onclick="sincronizarNuvem()" style="flex:1; background: #6f42c1; color: white; padding: 12px; border: none; border-radius: 5px; cursor:pointer; font-weight: bold;">☁️ SINCRONIZAR NUVEM</button>
+        <button onclick="salvarNoGist()" style="flex:1; background: #6f42c1; color: white; padding: 12px; border: none; border-radius: 5px; cursor:pointer; font-weight: bold;">☁️ SALVAR ALTERAÇÕES ONLINE</button>
     </div>
 </div>
 
@@ -205,90 +204,75 @@
 <div id="print-area"></div>
 
 <script>
-    // CONFIGURAÇÃO NUVEM E BANCO
-    const BIN_ID = "663989bead19ca34f86580f4";
-    const API_KEY = "$2a$10$fV27H8iK.eMv/i1hC/pG/uF7hYpWvD9z2.tXfC3ZfL5YvF3ZfL5Yv";
+    // CONFIGURAÇÃO GITHUB GIST (ONLINE)
+    const GITHUB_TOKEN = "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";
+    const GIST_ID = "b694eb55a59d94d4db42c5ad5ecf7ff2";
 
-    let db, produtosCache = [], carrinho = [], lojaAberta = false, valorAbertura = 0, itemAtual = null, taxaSelecionada = 0;
-    const money = (num) => Math.round(num * 100) / 100;
-
-    // INICIALIZAÇÃO DO BANCO DE DADOS COMPLETO (INDEXEDDB)
-    const request = indexedDB.open("JC_PESCADOS_DB_V5", 1);
-    request.onsuccess = e => { db = e.target.result; init(); };
-    request.onupgradeneeded = e => {
-        let d = e.target.result;
-        if (!d.objectStoreNames.contains("produtos")) d.createObjectStore("produtos", { keyPath: "nome" });
-        if (!d.objectStoreNames.contains("vendas")) d.createObjectStore("vendas", { keyPath: "id", autoIncrement: true });
-        if (!d.objectStoreNames.contains("gastos")) d.createObjectStore("gastos", { keyPath: "id", autoIncrement: true });
+    // ESTRUTURA DE DADOS GLOBAL
+    let dbState = {
+        produtos: [],
+        vendas: [],
+        gastos: []
     };
 
+    let carrinho = [], lojaAberta = false, valorAbertura = 0, itemAtual = null, taxaSelecionada = 0;
+    const money = (num) => Math.round(num * 100) / 100;
+
+    // --- FUNÇÕES DE COMUNICAÇÃO COM GITHUB ---
+
+    async function carregarDadosOnline() {
+        try {
+            const response = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+                headers: { 'Authorization': `token ${GITHUB_TOKEN}` }
+            });
+            const data = await response.json();
+            const content = data.files["jc_pescados_db.json"].content;
+            dbState = JSON.parse(content);
+            renderizarPDV();
+            verificarAlertasEstoque();
+            atualizarUIStatus();
+        } catch (err) {
+            console.error("Erro ao carregar dados do Gist:", err);
+            alert("Erro ao conectar com o banco online. Verifique sua internet.");
+        }
+    }
+
+    async function salvarNoGist() {
+        try {
+            const response = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `token ${GITHUB_TOKEN}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    files: {
+                        "jc_pescados_db.json": {
+                            content: JSON.stringify(dbState, null, 2)
+                        }
+                    }
+                })
+            });
+            if (response.ok) {
+                console.log("Banco sincronizado online.");
+            }
+        } catch (err) {
+            console.error("Erro ao salvar no Gist:", err);
+        }
+    }
+
+    // Inicialização
     function init() {
         const hoje = new Date().toISOString().split('T')[0];
         document.getElementById('filtro-data-inicio').value = hoje;
         document.getElementById('filtro-data-fim').value = hoje;
         document.getElementById('rep-data-inicio').value = hoje;
         document.getElementById('rep-data-fim').value = hoje;
-        carregarProdutos();
-        atualizarUIStatus();
-        baixarDadosNuvem(); 
+        carregarDadosOnline();
     }
+    init();
 
-    // --- FUNÇÕES DO BANCO DE DADOS (DATA LAYER) ---
-    
-    // Sincroniza cache local com o banco físico
-    function syncDb(callback) {
-        const tx = db.transaction("produtos", "readwrite");
-        const store = tx.objectStore("produtos");
-        produtosCache.forEach(p => store.put(p));
-        tx.oncomplete = () => { if(callback) callback(); };
-    }
-
-    function carregarProdutos() {
-        db.transaction("produtos").objectStore("produtos").getAll().onsuccess = e => {
-            produtosCache = e.target.result;
-            renderizarPDV();
-            verificarAlertasEstoque();
-            if(document.getElementById('estoque').classList.contains('active')) renderizarEstoque();
-            if(document.getElementById('reposicao').classList.contains('active')) renderizarGestaoReposicao();
-        };
-    }
-
-    // --- FUNÇÕES DE NUVEM E BACKUP ---
-
-    async function sincronizarNuvem() {
-        if(!confirm("Enviar estoque para nuvem?")) return;
-        try {
-            const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
-                body: JSON.stringify(produtosCache)
-            });
-            if(res.ok) alert("Sincronizado na Nuvem!");
-        } catch (err) { alert("Erro de conexão."); }
-    }
-
-    async function baixarDadosNuvem() {
-        try {
-            const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, { headers: { 'X-Master-Key': API_KEY } });
-            const data = await res.json();
-            if(data.record) {
-                const tx = db.transaction("produtos", "readwrite");
-                data.record.forEach(p => tx.objectStore("produtos").put(p));
-                tx.oncomplete = () => carregarProdutos();
-            }
-        } catch (err) { console.log("Offline mode."); }
-    }
-
-    function exportarBackup() {
-        const data = { produtos: produtosCache, exportadoEm: new Date().toLocaleString() };
-        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `JC_BACKUP_${new Date().toLocaleDateString()}.json`;
-        a.click();
-    }
-
-    // --- FUNÇÕES DO PDV (PRESERVADAS) ---
+    // --- FUNÇÕES DO PDV (ADAPTADAS PARA dbState) ---
 
     function fluxoCaixa() {
         const btn = document.getElementById('btn-toggle-loja');
@@ -323,24 +307,20 @@
 
     function calcularSaldoGeral() {
         const hoje = new Date().toLocaleDateString('pt-BR');
-        db.transaction(["vendas", "gastos"], "readonly").objectStore("vendas").getAll().onsuccess = e => {
-            const vds = e.target.result.filter(v => v.data === hoje);
-            db.transaction("gastos").objectStore("gastos").getAll().onsuccess = eg => {
-                const gst = eg.target.result.filter(g => g.data === hoje);
-                const tVendas = money(vds.reduce((a, b) => a + (b.total || 0), 0));
-                const tGastos = money(gst.reduce((a, b) => a + (b.valor || 0), 0));
-                document.getElementById('saldo-caixa-display').innerText = `R$ ${(money(valorAbertura + tVendas - tGastos)).toFixed(2)}`;
-            };
-        };
+        const vds = dbState.vendas.filter(v => v.data === hoje);
+        const gst = dbState.gastos.filter(g => g.data === hoje);
+        const tVendas = money(vds.reduce((a, b) => a + (b.total || 0), 0));
+        const tGastos = money(gst.reduce((a, b) => a + (b.valor || 0), 0));
+        document.getElementById('saldo-caixa-display').innerText = `R$ ${(money(valorAbertura + tVendas - tGastos)).toFixed(2)}`;
     }
 
     function renderizarPDV() {
         const container = document.getElementById('pdv-categorias-dinamicas');
         container.innerHTML = "";
-        const cats = [...new Set(produtosCache.map(p => p.categoria))];
+        const cats = [...new Set(dbState.produtos.map(p => p.categoria))];
         cats.forEach(cat => {
             const div = document.createElement('div'); div.className = 'coluna-cat'; div.innerHTML = `<h4>${cat}</h4>`;
-            produtosCache.filter(p => p.categoria === cat).forEach(p => {
+            dbState.produtos.filter(p => p.categoria === cat).forEach(p => {
                 div.innerHTML += `<div class="card-prod" onclick="abrirModalQtd('${p.nome}')" style="border-color: ${p.estoque <= 5 ? 'red' : 'var(--azul)'}">${p.nome}<br><small>R$ ${p.venda.toFixed(2)} / ${p.medida}</small><span class="estoque-badge" style="color: ${p.estoque <= 5 ? 'red' : 'var(--info)'}">📦 ${p.estoque.toFixed(3)}</span></div>`;
             });
             container.appendChild(div);
@@ -349,7 +329,7 @@
 
     function abrirModalQtd(nome) {
         if(!lojaAberta) return;
-        itemAtual = produtosCache.find(p => p.nome === nome);
+        itemAtual = dbState.produtos.find(p => p.nome === nome);
         document.getElementById('modal-nome-prod').innerText = itemAtual.nome;
         document.getElementById('label-tipo-medida').innerText = "Qtd em " + itemAtual.medida + ":";
         document.getElementById('estoque-atual-aviso').innerText = "Estoque Disponível: " + itemAtual.estoque.toFixed(3);
@@ -437,6 +417,7 @@
         const parcelas = document.getElementById('select-qtd-parcelas').value || 1;
         
         const venda = {
+            id: Date.now(),
             cliente: document.getElementById('nome-cliente').value.toUpperCase() || "CONSUMIDOR",
             data: hoje.toLocaleDateString('pt-BR'),
             dataObj: hoje.toISOString().split('T')[0],
@@ -448,20 +429,22 @@
             metodo: (metodo === "CRÉDITO") ? `CRÉDITO ${parcelas}X` : metodo
         };
 
-        const tx = db.transaction(["vendas", "produtos"], "readwrite");
+        // Atualiza Estoque em Memória
         venda.itens.forEach(item => { 
-            const p = produtosCache.find(prod => prod.nome === item.nome); 
-            if (p) { p.estoque -= item.qtd; tx.objectStore("produtos").put(p); } 
+            const p = dbState.produtos.find(prod => prod.nome === item.nome); 
+            if (p) { p.estoque -= item.qtd; } 
         });
 
-        tx.objectStore("vendas").add(venda).onsuccess = (e) => {
-            venda.id = e.target.result; 
-            if(confirm("Imprimir Nota?")) imprimirCupom(venda);
-            carrinho = []; 
-            document.getElementById('desc-input').value = 0; 
-            document.getElementById('nome-cliente').value = "";
-            renderCarrinho(); carregarProdutos(); calcularSaldoGeral();
-        };
+        dbState.vendas.push(venda);
+        salvarNoGist(); // Persiste online
+
+        if(confirm("Imprimir Nota?")) imprimirCupom(venda);
+        carrinho = []; 
+        document.getElementById('desc-input').value = 0; 
+        document.getElementById('nome-cliente').value = "";
+        renderCarrinho(); 
+        renderizarPDV();
+        calcularSaldoGeral();
     }
 
     // --- RELATÓRIOS E GESTÃO ---
@@ -470,72 +453,71 @@
         const dInicio = document.getElementById('filtro-data-inicio').value;
         const dFim = document.getElementById('filtro-data-fim').value;
 
-        db.transaction(["vendas", "gastos"], "readonly").objectStore("vendas").getAll().onsuccess = e => {
-            const vds = e.target.result.filter(v => { const dv = v.dataObj || v.data.split('/').reverse().join('-'); return dv >= dInicio && dv <= dFim; });
-            db.transaction("gastos").objectStore("gastos").getAll().onsuccess = eg => {
-                const gst = eg.target.result.filter(g => { const dg = g.dataObj || g.data.split('/').reverse().join('-'); return dg >= dInicio && dg <= dFim; });
-                
-                const bruto = money(vds.reduce((a,b)=>a+(b.total || 0), 0));
-                const lucro = money(vds.reduce((a,b)=>a+(b.lucro || 0), 0));
-                const gastos = money(gst.reduce((a,b)=>a+(b.valor || 0), 0));
+        const vds = dbState.vendas.filter(v => { const dv = v.dataObj || v.data.split('/').reverse().join('-'); return dv >= dInicio && dv <= dFim; });
+        const gst = dbState.gastos.filter(g => { const dg = g.dataObj || g.data.split('/').reverse().join('-'); return dg >= dInicio && dg <= dFim; });
+        
+        const bruto = money(vds.reduce((a,b)=>a+(b.total || 0), 0));
+        const lucro = money(vds.reduce((a,b)=>a+(b.lucro || 0), 0));
+        const gastos = money(gst.reduce((a,b)=>a+(b.valor || 0), 0));
 
-                document.getElementById('resumo-html-v8').innerHTML = `RESUMO DO PERÍODO:\nLÍQUIDO: R$ ${bruto.toFixed(2)}\nLUCRO: R$ ${lucro.toFixed(2)}\nGASTOS: R$ ${gastos.toFixed(2)}`;
+        document.getElementById('resumo-html-v8').innerHTML = `RESUMO DO PERÍODO:\nLÍQUIDO: R$ ${bruto.toFixed(2)}\nLUCRO: R$ ${lucro.toFixed(2)}\nGASTOS: R$ ${gastos.toFixed(2)}`;
 
-                let htmlLista = `<h3>Vendas Detalhadas</h3>` + vds.reverse().map(v => `
-                    <div class="venda-card">
-                        <b>#${v.id} - ${v.data} ${v.hora}</b> | R$ ${v.total.toFixed(2)}
-                        <br>Pag: ${v.metodo}
-                        <button class="btn-reimprimir" onclick='reimprimirVendaPorId(${v.id})'>REIMPRIMIR</button>
-                        <button class="btn-estornar" onclick="estornarVenda(${v.id})">ESTORNAR</button>
-                    </div>`).join('');
-                document.getElementById('historico-lista').innerHTML = htmlLista;
-            };
-        };
+        let htmlLista = `<h3>Vendas Detalhadas</h3>` + vds.slice().reverse().map(v => `
+            <div class="venda-card">
+                <b>#${v.id} - ${v.data} ${v.hora}</b> | R$ ${v.total.toFixed(2)}
+                <br>Pag: ${v.metodo}
+                <button class="btn-reimprimir" onclick='reimprimirVendaPorId(${v.id})'>REIMPRIMIR</button>
+                <button class="btn-estornar" onclick="estornarVenda(${v.id})">ESTORNAR</button>
+            </div>`).join('');
+        document.getElementById('historico-lista').innerHTML = htmlLista;
     }
 
     function estornarVenda(id) {
         if(!confirm("Estornar?")) return;
-        const tx = db.transaction(["vendas", "produtos"], "readwrite");
-        tx.objectStore("vendas").get(id).onsuccess = (e) => {
-            const v = e.target.result;
+        const idx = dbState.vendas.findIndex(v => v.id === id);
+        if(idx !== -1) {
+            const v = dbState.vendas[idx];
             v.itens.forEach(it => {
-                const p = produtosCache.find(pc => pc.nome === it.nome);
-                if(p) { p.estoque += it.qtd; tx.objectStore("produtos").put(p); }
+                const p = dbState.produtos.find(pc => pc.nome === it.nome);
+                if(p) { p.estoque += it.qtd; }
             });
-            tx.objectStore("vendas").delete(id).onsuccess = () => { carregarProdutos(); renderizarRelatorio(); };
-        };
+            dbState.vendas.splice(idx, 1);
+            salvarNoGist();
+            renderizarRelatorio();
+            renderizarPDV();
+        }
     }
 
     function lancarGasto() {
         const desc = document.getElementById('gasto-desc').value.toUpperCase();
         const valor = money(parseFloat(document.getElementById('gasto-valor').value));
         if (!desc || !valor) return;
-        const g = { desc, valor, data: new Date().toLocaleDateString('pt-BR'), dataObj: new Date().toISOString().split('T')[0] };
-        db.transaction("gastos", "readwrite").objectStore("gastos").add(g).onsuccess = () => {
-            document.getElementById('gasto-desc').value = ""; document.getElementById('gasto-valor').value = "";
-            renderizarRelatorio(); calcularSaldoGeral();
-        };
+        const g = { id: Date.now(), desc, valor, data: new Date().toLocaleDateString('pt-BR'), dataObj: new Date().toISOString().split('T')[0] };
+        dbState.gastos.push(g);
+        salvarNoGist();
+        document.getElementById('gasto-desc').value = ""; document.getElementById('gasto-valor').value = "";
+        renderizarRelatorio(); 
+        calcularSaldoGeral();
     }
 
     // --- ESTOQUE E CONFIGURAÇÃO ---
 
     function renderizarEstoque() { 
-        document.getElementById('tabela-estoque-corpo').innerHTML = produtosCache.map(p => `
+        document.getElementById('tabela-estoque-corpo').innerHTML = dbState.produtos.map(p => `
             <tr>
                 <td style="padding:10px;">${p.nome}</td>
                 <td>${p.medida}</td>
-                <td><input type="number" step="0.001" value="${p.estoque}" onchange="updateDbDirect('${p.nome}','estoque',this.value)" style="width:90px;"></td>
-                <td><input type="number" step="0.01" value="${p.custo}" onchange="updateDbDirect('${p.nome}','custo',this.value)" style="width:80px;"></td>
-                <td><input type="number" step="0.01" value="${p.venda}" onchange="updateDbDirect('${p.nome}','venda',this.value)" style="width:80px;"></td>
+                <td><input type="number" step="0.001" value="${p.estoque}" onchange="updateMemDirect('${p.nome}','estoque',this.value)" style="width:90px;"></td>
+                <td><input type="number" step="0.01" value="${p.custo}" onchange="updateMemDirect('${p.nome}','custo',this.value)" style="width:80px;"></td>
+                <td><input type="number" step="0.01" value="${p.venda}" onchange="updateMemDirect('${p.nome}','venda',this.value)" style="width:80px;"></td>
                 <td><button onclick="excluirProd('${p.nome}')" style="color:red; border:none; background:none; cursor:pointer;">[X]</button></td>
             </tr>`).join(''); 
     }
 
-    function updateDbDirect(nome, campo, valor) {
-        const p = produtosCache.find(i => i.nome === nome);
+    function updateMemDirect(nome, campo, valor) {
+        const p = dbState.produtos.find(i => i.nome === nome);
         if(p) {
             p[campo] = parseFloat(valor);
-            db.transaction("produtos", "readwrite").objectStore("produtos").put(p);
         }
     }
 
@@ -545,10 +527,16 @@
         const m = document.getElementById('nova-medida').value;
         if(!n) return;
         const novo = { nome: n, categoria: c, medida: m, estoque: 0, custo: 0, venda: 0 };
-        db.transaction("produtos", "readwrite").objectStore("produtos").add(novo).onsuccess = () => { carregarProdutos(); };
+        dbState.produtos.push(novo);
+        renderizarEstoque();
     }
 
-    function excluirProd(n) { if(confirm("Remover?")) db.transaction("produtos", "readwrite").objectStore("produtos").delete(n).onsuccess = () => carregarProdutos(); }
+    function excluirProd(n) { 
+        if(confirm("Remover?")) {
+            dbState.produtos = dbState.produtos.filter(p => p.nome !== n);
+            renderizarEstoque();
+        }
+    }
 
     function openTab(id, event) { 
         document.querySelectorAll('.content').forEach(c => c.classList.remove('active')); 
@@ -558,6 +546,62 @@
         if(id === 'relatorio') renderizarRelatorio(); 
         if(id === 'estoque') renderizarEstoque(); 
         if(id === 'reposicao') renderizarGestaoReposicao();
+    }
+
+    // --- REPOSIÇÃO E LUCRO REAL ---
+
+    function verificarAlertasEstoque() {
+        const baixo = dbState.produtos.filter(p => p.estoque <= 5).length;
+        const badge = document.getElementById('badge-alerta');
+        if(baixo > 0) { badge.style.display = 'block'; badge.innerText = baixo; }
+        else { badge.style.display = 'none'; }
+    }
+
+    function renderizarGestaoReposicao() {
+        const dInicio = document.getElementById('rep-data-inicio').value;
+        const dFim = document.getElementById('rep-data-fim').value;
+        const vds = dbState.vendas.filter(v => { const dv = v.dataObj || v.data.split('/').reverse().join('-'); return dv >= dInicio && dv <= dFim; });
+        
+        let custoForn = 0;
+        let lucroReal = 0;
+        let totalBruto = 0;
+
+        vds.forEach(v => {
+            totalBruto += v.total;
+            let custoVenda = v.itens.reduce((acc, it) => acc + (it.custo * it.qtd), 0);
+            custoForn += custoVenda;
+        });
+
+        lucroReal = totalBruto - custoForn;
+
+        document.getElementById('fin-custo-total').innerText = "R$ " + money(custoForn).toFixed(2);
+        document.getElementById('fin-lucro-total').innerText = "R$ " + money(lucroReal).toFixed(2);
+        document.getElementById('fin-vendas-brutas').innerText = "R$ " + money(totalBruto).toFixed(2);
+
+        const alertasCont = document.getElementById('lista-alertas-reposicao');
+        alertasCont.innerHTML = "<h3>Estoque Crítico (Reposição Imediata)</h3>";
+        dbState.produtos.filter(p => p.estoque <= 5).forEach(p => {
+            alertasCont.innerHTML += `
+                <div class="card-reposicao" style="border-color: ${p.estoque <= 2 ? 'red' : 'orange'}">
+                    <b>${p.nome}</b> - Restam apenas <b>${p.estoque.toFixed(3)} ${p.medida}</b>
+                    <br><small>Sugestão: Comprar pelo menos ${(10 - p.estoque).toFixed(0)} para normalizar.</small>
+                </div>`;
+        });
+    }
+
+    function limparHistoricoGeral() {
+        if(confirm("ATENÇÃO: Isso apagará todas as vendas e gastos permanentemente do banco online. Continuar?")) {
+            dbState.vendas = [];
+            dbState.gastos = [];
+            salvarNoGist();
+            renderizarGestaoReposicao();
+            alert("Histórico limpo!");
+        }
+    }
+
+    function reimprimirVendaPorId(id) {
+        const v = dbState.vendas.find(v => v.id === id);
+        if(v) imprimirCupom(v);
     }
 
     function imprimirCupom(v) {

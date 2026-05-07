@@ -208,14 +208,16 @@
     const GITHUB_TOKEN = "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";
     const GIST_ID = "b694eb55a59d94d4db42c5ad5ecf7ff2";
 
-    // ESTRUTURA DE DADOS GLOBAL
+    // ESTRUTURA DE DADOS GLOBAL ATUALIZADA
     let dbState = {
+        config: { lojaAberta: false, valorAbertura: 0, caixaData: "" },
         produtos: [],
         vendas: [],
-        gastos: []
+        gastos: [],
+        fechamentos: []
     };
 
-    let carrinho = [], lojaAberta = false, valorAbertura = 0, itemAtual = null, taxaSelecionada = 0;
+    let carrinho = [], itemAtual = null, taxaSelecionada = 0;
     const money = (num) => Math.round(num * 100) / 100;
 
     // --- FUNÇÕES DE COMUNICAÇÃO COM GITHUB ---
@@ -288,21 +290,22 @@
 
     function fluxoCaixa() {
         const btn = document.getElementById('btn-toggle-loja');
-        if (!lojaAberta) {
+        if (!dbState.config.lojaAberta) {
             let v = prompt("Informe o Saldo de Abertura:", "0.00");
             if (v !== null) { 
-                valorAbertura = money(parseFloat(v.replace(',', '.')) || 0); 
-                lojaAberta = true; 
-                btn.innerText = "FECHAR CAIXA"; 
-                btn.style.background = "red"; 
+                dbState.config.valorAbertura = money(parseFloat(v.replace(',', '.')) || 0); 
+                dbState.config.lojaAberta = true; 
+                dbState.config.caixaData = new Date().toLocaleDateString('pt-BR');
+                salvarNoGist();
                 atualizarUIStatus(); 
             }
         } else {
             if (confirm("Fechar caixa e ver relatórios?")) { 
                 imprimirRelatorioDia(); 
-                lojaAberta = false; 
-                valorAbertura = 0; carrinho = [];
-                btn.innerText = "ABRIR CAIXA"; btn.style.background = "green"; 
+                dbState.config.lojaAberta = false; 
+                dbState.config.valorAbertura = 0; 
+                carrinho = [];
+                salvarNoGist();
                 atualizarUIStatus(); 
                 renderCarrinho();
                 openTab('relatorio', { currentTarget: document.getElementById('tab-relatorio') });
@@ -311,9 +314,13 @@
     }
 
     function atualizarUIStatus() {
-        document.getElementById('status-txt').innerText = lojaAberta ? "ABERTO" : "FECHADO";
-        document.getElementById('status-txt').className = "status-loja " + (lojaAberta ? "aberta" : "fechada");
-        document.getElementById('msg-loja-fechada').style.display = lojaAberta ? "none" : "flex";
+        const btn = document.getElementById('btn-toggle-loja');
+        const aberta = dbState.config.lojaAberta;
+        document.getElementById('status-txt').innerText = aberta ? "ABERTO" : "FECHADO";
+        document.getElementById('status-txt').className = "status-loja " + (aberta ? "aberta" : "fechada");
+        document.getElementById('msg-loja-fechada').style.display = aberta ? "none" : "flex";
+        btn.innerText = aberta ? "FECHAR CAIXA" : "ABRIR CAIXA";
+        btn.style.background = aberta ? "red" : "green";
         calcularSaldoGeral();
     }
 
@@ -323,7 +330,8 @@
         const gst = dbState.gastos.filter(g => g.data === hoje);
         const tVendas = money(vds.reduce((a, b) => a + (b.total || 0), 0));
         const tGastos = money(gst.reduce((a, b) => a + (b.valor || 0), 0));
-        document.getElementById('saldo-caixa-display').innerText = `R$ ${(money(valorAbertura + tVendas - tGastos)).toFixed(2)}`;
+        const saldo = money(dbState.config.valorAbertura + tVendas - tGastos);
+        document.getElementById('saldo-caixa-display').innerText = `R$ ${saldo.toFixed(2)}`;
     }
 
     function renderizarPDV() {
@@ -340,7 +348,7 @@
     }
 
     function abrirModalQtd(nome) {
-        if(!lojaAberta) return;
+        if(!dbState.config.lojaAberta) return;
         itemAtual = dbState.produtos.find(p => p.nome === nome);
         document.getElementById('modal-nome-prod').innerText = itemAtual.nome;
         document.getElementById('label-tipo-medida').innerText = "Qtd em " + itemAtual.medida + ":";

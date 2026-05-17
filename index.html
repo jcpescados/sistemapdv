@@ -82,7 +82,8 @@
         </div>
         <div class="pdv-categorias" id="pdv-categorias-dinamicas"></div>
         <div class="carrinho">
-            <h3>🛒 Carrinho</h3>
+            <h3>🛒 Carrinho</h3>           
+            
             <div class="lista-itens" id="lista-carrinho"></div>
             <input type="text" id="nome-cliente" placeholder="Nome do Cliente" style="padding:10px; margin-bottom:10px; width:100%; box-sizing:border-box;">
             <div style="display:flex; justify-content:space-between; margin:5px 0; align-items:center;">
@@ -241,7 +242,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
 <script>
-    // Configuração oficial apontando para o seu Realtime Database do Firebase
     const firebaseConfig = {
         databaseURL: "https://jc-pescados-default-rtdb.firebaseio.com/"
     };
@@ -263,7 +263,6 @@
         document.getElementById('rep-data-inicio').value = hoje;
         document.getElementById('rep-data-fim').value = hoje;
         
-        // Ativa a sincronização constante com a nuvem em tempo real
         sincronizarProdutosRealtime();
         atualizarUIStatus();
     }
@@ -300,6 +299,25 @@
         const badge = document.getElementById('badge-alerta');
         if (baixoEstoque.length > 0) { badge.style.display = 'block'; badge.innerText = baixoEstoque.length; }
         else { badge.style.display = 'none'; }
+    }
+
+    // Função para Venda Rápida por Valor Direto no Carrinho
+    function adicionarVendaRapida() {
+        if(!lojaAberta) return;
+        const valor = parseFloat(document.getElementById('venda-rapida-valor').value);
+        if (!valor || valor <= 0) { alert("Informe um valor válido!"); return; }
+        
+        carrinho.push({
+            nome: "VENDA RAPIDA VALOR",
+            categoria: "GERAL",
+            medida: "UND",
+            custo: money(valor * 0.5), // Custo padrão fictício estimado de 50% para cálculo de lucro livre
+            venda: money(valor),
+            qtd: 1
+        });
+        
+        renderCarrinho();
+        document.getElementById('venda-rapida-valor').value = "";
     }
 
     function renderizarGestaoReposicao() {
@@ -383,6 +401,20 @@
                         </div>`;
                 }
             });
+
+            // Tratamento especial para vendas rápidas agregadas no relatório
+            const totalVendasRapidasValor = vendasPeriodo.reduce((acc, v) => acc + v.itens.filter(i => i.nome === "VENDA RAPIDA VALOR").reduce((s, it) => s + (it.venda * it.qtd), 0), 0);
+            if(totalVendasRapidasValor > 0) {
+                const custoRapido = money(totalVendasRapidasValor * 0.5);
+                const lucroRapido = money(totalVendasRapidasValor - custoRapido);
+                tabelaDetalhada += `
+                    <tr style="border-bottom: 1px solid #ddd;">
+                        <td style="padding:8px;"><b>VENDA RAPIDA VALOR</b></td>
+                        <td style="text-align:center; padding:8px;"><b>-</b></td>
+                        <td style="text-align:center; padding:8px;"><b>R$ ${custoRapido.toFixed(2)}</b></td>
+                        <td style="text-align:center; padding:8px;"><b>R$ ${lucroRapido.toFixed(2)}</b></td>
+                    </tr>`;
+            }
 
             tabelaDetalhada += `
                         </tbody>
@@ -554,7 +586,7 @@
         atualizarRestantePagamento();
     }
 
-    function obterSomaDosPagamentos() {
+    function obtenerSomaDosPagamentos() {
         const d = parseFloat(document.getElementById('pag-dinheiro').value) || 0;
         const p = parseFloat(document.getElementById('pag-pix').value) || 0;
         const deb = parseFloat(document.getElementById('pag-debito').value) || 0;
@@ -564,7 +596,7 @@
 
     function atualizarRestantePagamento() {
         const totalVenda = money(parseFloat(document.getElementById('total-display').innerText.replace("R$ ", "")));
-        const preenchido = obterSomaDosPagamentos();
+        const preenchido = obtenerSomaDosPagamentos();
         const dif = money(totalVenda - preenchido);
         const display = document.getElementById('restante-pagamento-display');
         
@@ -599,7 +631,7 @@
     function verificarPagamento() {
         if (carrinho.length === 0) return;
         const totalVenda = money(parseFloat(document.getElementById('total-display').innerText.replace("R$ ", "")));
-        const preenchido = obterSomaDosPagamentos();
+        const preenchido = obtenerSomaDosPagamentos();
         
         if (preenchido < totalVenda) {
             alert(`Erro: O valor informado é menor que o total da venda. Falta: R$ ${(totalVenda - preenchido).toFixed(2)}`);
@@ -621,8 +653,8 @@
     }
 
     function adicionarTaxaFixa(valor) {
-        let atual = parseFloat(document.getElementById('taxa-personalizada-input').value) || 0;
-        document.getElementById('taxa-personalizada-input').value = (atual + valor).toFixed(2);
+        let abrirCampos = parseFloat(document.getElementById('taxa-personalizada-input').value) || 0;
+        document.getElementById('taxa-personalizada-input').value = (abrirCampos + valor).toFixed(2);
         ajustarTaxaModal(document.getElementById('taxa-personalizada-input').value);
     }
 
@@ -703,7 +735,13 @@
         updates[`/vendas/${novaVendaRef.key}`] = venda;
 
         fbDatabase.ref().update(updates).then(() => {
-            if(confirm("Imprimir Nota?")) imprimirCupom(venda);
+            if(confirm("Imprimir Nota Fiscal?")) imprimirCupom(venda);
+            
+            // Pergunta se deseja enviar via WhatsApp logo após finalizar
+            if(confirm("Deseja enviar este cupom fiscal pelo WhatsApp?")) {
+                enviarWhatsAppVenda(venda);
+            }
+
             carrinho = []; 
             document.getElementById('desc-input').value = 0; 
             document.getElementById('nome-cliente').value = "";
@@ -711,6 +749,45 @@
             renderCarrinho(); 
             calcularSaldoGeral();
         }).catch(err => alert("Erro ao salvar: " + err.message));
+    }
+
+    // Função para gerar o texto padrão NF e redirecionar para o WhatsApp
+    function enviarWhatsAppVenda(v) {
+        let numCel = prompt("Digite o WhatsApp do cliente com DDD (Apenas números, ex: 86999998888):");
+        if(!numCel) return;
+        
+        numCel = numCel.replace(/\D/g, '');
+        if(numCel.length < 10) { alert("Número inválido!"); return; }
+
+        let txtNF = `🧾 *DOCUMENTO AUXILIAR DE NOTA FISCAL*\n`;
+        txtNF += `----------------------------------------\n`;
+        txtNF += `🏢 *JC PESCADOS*\n`;
+        txtNF += `🆔 CNPJ: 40.086.457/0001-85\n`;
+        txtNF += `📍 Endereço: Rua Alberto Leal Nunes, 1925\n`;
+        txtNF += `----------------------------------------\n`;
+        txtNF += `📅 Data: ${v.data}   🕒 Hora: ${v.hora}\n`;
+        txtNF += `🔢 Cupom: #${v.id.substring(0,6)}\n`;
+        txtNF += `👤 Cliente: ${v.cliente}\n`;
+        txtNF += `----------------------------------------\n`;
+        txtNF += `*ITENS COMPRADOS:*\n`;
+        
+        v.itens.forEach(i => {
+            txtNF += `• ${i.nome} (${i.qtd.toFixed(3)} ${i.medida}) -> R$ ${money(i.venda*i.qtd).toFixed(2)}\n`;
+        });
+        
+        txtNF += `----------------------------------------\n`;
+        txtNF += `💰 *Subtotal:* R$ ${v.subtotal.toFixed(2)}\n`;
+        if(v.desconto > 0) txtNF += `📉 *Desconto:* R$ ${v.desconto.toFixed(2)}\n`;
+        if(v.taxa > 0) txtNF += `💳 *Acréscimo Taxa:* R$ ${v.taxa.toFixed(2)}\n`;
+        txtNF += `⭐ *TOTAL PAGO:* R$ ${v.total.toFixed(2)}\n`;
+        txtNF += `----------------------------------------\n`;
+        txtNF += `💳 *Forma de Pagamento:*\n${v.metodo.split(" | ").join("\n")}\n`;
+        txtNF += `----------------------------------------\n`;
+        txtNF += `🙏 Obrigado pela preferência e volte sempre!`;
+
+        const urlEncoded = encodeURIComponent(txtNF);
+        const win = window.open(`https://api.whatsapp.com/send?phone=55${numCel}&text=${urlEncoded}`, '_blank');
+        if (win) win.focus();
     }
 
     function renderizarRelatorio() {
@@ -735,15 +812,15 @@
                 const totGastos = money(gst.reduce((a, b) => a + (b.valor || 0), 0));
                 const totLucro = money(vds.reduce((a,b)=>a+(b.lucro || 0), 0));
                 
-                let vDinheiro = 0, vPix = 0, vDebito = 0, vCredito = 0;
+                let abrirCampos = 0, vPix = 0, vDebito = 0, vCredito = 0;
                 vds.forEach(v => {
                     if(v.pagamentosDetalhados){
-                        vDinheiro += v.pagamentosDetalhados.dinheiro || 0;
+                        abrirCampos += v.pagamentosDetalhados.dinheiro || 0;
                         vPix += v.pagamentosDetalhados.pix || 0;
                         vDebito += v.pagamentosDetalhados.debito || 0;
                         vCredito += v.pagamentosDetalhados.credito || 0;
                     } else {
-                        if (v.metodo === "DINHEIRO") vDinheiro += v.total;
+                        if (v.metodo === "DINHEIRO") abrirCampos += v.total;
                         else if (v.metodo === "PIX") vPix += v.total;
                         else if (v.metodo === "DÉBITO") vDebito += v.total;
                         else if (v.metodo && v.metodo.includes("CRÉDITO")) vCredito += v.total;
@@ -754,7 +831,7 @@
                 vds.forEach(v => { v.itens.forEach(it => { if(!prodSoma[it.nome]) prodSoma[it.nome] = { qtd: 0, SelfMedida: it.medida || "UN" }; prodSoma[it.nome].qtd += it.qtd; }); });
                 let prodListaTxt = Object.keys(prodSoma).map(nome => `${nome.padEnd(20)}: ${prodSoma[nome].qtd.toFixed(3)} ${prodSoma[nome].SelfMedida}`).join('\n');
                 
-                document.getElementById('resumo-html-v8').innerHTML = `RESUMO DO PERÍODO:\nBRUTO PRODUTOS: R$ ${brutoProdutos.toFixed(2)}\n(-) DESCONTOS: R$ ${totDescontos.toFixed(2)}\n(+) TAXAS: R$ ${totTaxas.toFixed(2)}\n(=) LÍQUIDO: R$ ${totVendasLiquido.toFixed(2)}\n(💰) LUCRO: R$ ${totLucro.toFixed(2)}\n(-) GASTOS: R$ ${totGastos.toFixed(2)}\n----------------------\nDIVISÃO DE ENTRADAS:\nDINHEIRO: R$ ${money(vDinheiro).toFixed(2)}\nPIX:      R$ ${money(vPix).toFixed(2)}\nDÉBITO:   R$ ${money(vDebito).toFixed(2)}\nCRÉDITO:  R$ ${money(vCredito).toFixed(2)}\n----------------------\nDIGITAÇÕES POR ITEM:\n${prodListaTxt}`;
+                document.getElementById('resumo-html-v8').innerHTML = `RESUMO DO PERÍODO:\nBRUTO PRODUTOS: R$ ${brutoProdutos.toFixed(2)}\n(-) DESCONTOS: R$ ${totDescontos.toFixed(2)}\n(+) TAXAS: R$ ${totTaxas.toFixed(2)}\n(=) LÍQUIDO: R$ ${totVendasLiquido.toFixed(2)}\n(💰) LUCRO: R$ ${totLucro.toFixed(2)}\n(-) GASTOS: R$ ${totGastos.toFixed(2)}\n----------------------\nDIVISÃO DE ENTRADAS:\nDINHEIRO: R$ ${money(abrirCampos).toFixed(2)}\nPIX:      R$ ${money(vPix).toFixed(2)}\nDÉBITO:   R$ ${money(vDebito).toFixed(2)}\nCRÉDITO:  R$ ${money(vCredito).toFixed(2)}\n----------------------\nDIGITAÇÕES POR ITEM:\n${prodListaTxt}`;
 
                 const vdsMes = todasVendas.filter(v => { const d = v.dataObj || v.data.split('/').reverse().join('-'); return d.includes(`${anoAtual}-${mesAtual}`); });
                 const gstMes = todosGastos.filter(g => { const d = g.dataObj || g.data.split('/').reverse().join('-'); return d.includes(`${anoAtual}-${mesAtual}`); });
@@ -765,12 +842,18 @@
 
                 document.getElementById('resumo-mensal-v8').innerHTML = `📊 RESUMO MENSAL (${mesAtual}/${anoAtual})\nTOTAL VENDIDO: R$ ${brutoMes.toFixed(2)}\nLUCRO ESTIMADO: R$ ${lucroMes.toFixed(2)}\nGASTOS TOTAIS: R$ ${gastosMes.toFixed(2)}\nLUCRO LÍQUIDO: R$ ${(lucroMes - gastosMes).toFixed(2)}`;
 
-                let htmlLista = `<h3>Vendas Detalhadas</h3>` + vds.slice().reverse().map(v => `<div class="venda-card"><b>#${v.id.substring(0,6)} - ${v.data} ${v.hora}</b> | Total: R$ ${v.total.toFixed(2)}<br>Pag: ${v.metodo} | Lucro: R$ ${v.lucro.toFixed(2)}<div class="detalhe-itens-venda">${v.itens.map(it => `• ${it.nome} - ${it.qtd.toFixed(3)}${it.medida || ''}`).join('<br>')}</div><button onclick="reimprimirVendaPorId('${v.id}')" class="btn-reimprimir">REIMPRIMIR</button><button onclick="estornarVenda('${v.id}')" class="btn-estornar">ESTORNAR</button></div>`).join('');
+                let htmlLista = `<h3>Vendas Detalhadas</h3>` + vds.slice().reverse().map(v => `<div class="venda-card"><b>#${v.id.substring(0,6)} - ${v.data} ${v.hora}</b> | Total: R$ ${v.total.toFixed(2)}<br>Pag: ${v.metodo} | Lucro: R$ ${v.lucro.toFixed(2)}<div class="detalhe-itens-venda">${v.itens.map(it => `• ${it.nome} - ${it.qtd.toFixed(3)}${it.medida || ''}`).join('<br>')}</div><button onclick="reimprimirVendaPorId('${v.id}')" class="btn-reimprimir">REIMPRIMIR</button><button onclick="window.enviarWhatsAppHistorico('${v.id}')" class="btn-reimprimir" style="background: #25d366; color: white;">WHATSAPP</button><button onclick="estornarVenda('${v.id}')" class="btn-estornar">ESTORNAR</button></div>`).join('');
                 
                 let htmlGastos = `<h3>Gastos Detalhados</h3>` + gst.slice().reverse().map(g => `<div class="gasto-card"><b>${g.desc} - ${g.data} ${g.hora}</b><br>Valor: R$ ${g.valor.toFixed(2)} <button onclick="excluirGasto('${g.id}')" style="color:red; border:1px solid red; background:white; cursor:pointer; font-size:10px; padding:2px 5px; border-radius:3px;">DELETAR</button></div>`).join('');
                 
                 document.getElementById('historico-lista').innerHTML = htmlLista + "<hr>" + htmlGastos;
             });
+        });
+    }
+
+    window.enviarWhatsAppHistorico = function(id) {
+        fbDatabase.ref(`vendas/${id}`).once("value", snapshot => {
+            if(snapshot.exists()) enviarWhatsAppVenda(snapshot.val());
         });
     }
 
@@ -825,8 +908,34 @@
         });
     }
 
+    // Estrutura Visual da Nota Fiscal Completa no padrão solicitado
     function imprimirCupom(v) {
-        document.getElementById('print-area').innerHTML = `<pre style="width:80mm; font-family:monospace; font-weight:bold;">\n----------------------------------------\n              JC PESCADOS               \n----------------------------------------\nDATA: ${v.data}         HORA: ${v.hora}\nCUPOM: #${v.id.substring(0,6)}         CLIENTE: ${v.cliente}\n----------------------------------------\nITEM                QTD     VALOR\n----------------------------------------\n${v.itens.map(i => `${i.nome.substring(0,18).padEnd(19)} ${i.qtd.toFixed(3)}${(i.medida || '').padEnd(2)} R$ ${money(i.venda*i.qtd).toFixed(2)}`).join('\n')}\n----------------------------------------\nSUBTOTAL:               R$ ${v.subtotal.toFixed(2).padStart(8)}\nDESCONTO:               R$ ${v.desconto.toFixed(2).padStart(8)}\nACRÉSCIMO TAXA:         R$ ${v.taxa.toFixed(2).padStart(8)}\n----------------------------------------\nTOTAL PAGO:             R$ ${v.total.toFixed(2).padStart(8)}\n----------------------------------------\nPAGAMENTO: \n${v.metodo.split(" | ").join("\n")}\n----------------------------------------</pre>`;
+        document.getElementById('print-area').innerHTML = `<pre style="width:80mm; font-family:monospace; font-weight:bold; color: black; line-height:1.2;">
+----------------------------------------
+**JC PESCADOS** CNPJ: 40.086.457/0001-85
+RUA ALBERTO LEAL NUNES, 1925
+----------------------------------------
+DOCUMENTO AUXILIAR DE NOTA FISCAL (NFC)
+----------------------------------------
+DATA: ${v.data}         HORA: ${v.hora}
+CUPOM: #${v.id.substring(0,6)}         
+CLIENTE: ${v.cliente}
+----------------------------------------
+ITEM                QTD     VALOR
+----------------------------------------
+${v.itens.map(i => `${i.nome.substring(0,18).padEnd(19)} ${i.qtd.toFixed(3)}${(i.medida || '').padEnd(2)} R$ ${money(i.venda*i.qtd).toFixed(2)}`).join('\n')}
+----------------------------------------
+SUBTOTAL:               R$ ${v.subtotal.toFixed(2).padStart(8)}
+DESCONTO:               R$ ${v.desconto.toFixed(2).padStart(8)}
+ACRÉSCIMO TAXA:         R$ ${v.taxa.toFixed(2).padStart(8)}
+----------------------------------------
+TOTAL PAGO:             R$ ${v.total.toFixed(2).padStart(8)}
+----------------------------------------
+PAGAMENTO: 
+${v.metodo.split(" | ").join("\n")}
+----------------------------------------
+ Obrigado pela preferência e volte sempre!
+----------------------------------------</pre>`;
         window.print();
     }
 
@@ -897,7 +1006,6 @@
     
     setInterval(() => { let r = document.getElementById('relogio'); if(r) r.innerText = new Date().toLocaleString('pt-BR'); }, 1000);
 
-    // Executa a inicialização ao abrir a tela
     window.onload = init;
 </script>
 </body>

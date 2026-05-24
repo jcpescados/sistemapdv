@@ -45,13 +45,23 @@
         
         .alerta-estoque-badge { background: red; color: white; border-radius: 50%; padding: 2px 6px; font-size: 10px; position: absolute; top: 5px; right: 5px; display: none; }
         .card-reposicao { background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px; border-left: 5px solid #ccc; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-        .grid-financeiro { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .grid-financeiro { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
         .stat-box { padding: 15px; border-radius: 8px; color: white; text-align: center; }
 
         .meios-pagamento-container { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px; }
         .meios-pagamento-container div { display: flex; flex-direction: column; }
         .meios-pagamento-container label { font-size: 0.75em; font-weight: bold; margin-bottom: 2px; color: #333; }
         .meios-pagamento-container input { padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; }
+
+        /* Classes específicas para a seção de Custos Operacionais */
+        .secao-custos { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 25px; text-align: left; }
+        .painel-custos-fixos, .bloquinho-notas { background: white; padding: 20px; border-radius: 12px; border: 1px solid #ddd; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .custo-campo { display: flex; flex-direction: column; margin-bottom: 12px; }
+        .custo-campo label { font-size: 0.85em; font-weight: bold; margin-bottom: 4px; color: #444; }
+        .custo-campo input { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 1em; }
+        .lista-bloquinho { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; font-family: monospace; font-size: 0.95em; }
+        .item-bloquinho { display: flex; justify-content: space-between; border-bottom: 1px dashed #e0e0e0; padding-bottom: 6px; color: #5d4037; }
+        .painel-metas { background: #e8f5e9; border-left: 5px solid var(--sucesso); padding: 15px; border-radius: 8px; margin-top: 20px; font-size: 0.9em; line-height: 1.5; color: #2e7d32; }
 
         #print-area { display: none; }
         @media print { 
@@ -145,49 +155,92 @@
     </div>
 
     <div style="background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
-        <strong>Período:</strong>
+        <strong>Período de Análise do Lucro Real:</strong>
         <input type="date" id="rep-data-inicio" style="padding: 8px; border-radius: 5px; border: 1px solid #ccc;">
         <input type="date" id="rep-data-fim" style="padding: 8px; border-radius: 5px; border: 1px solid #ccc;">
-        <button onclick="renderizarGestaoReposicao()" style="background: var(--azul); color: white; border: none; padding: 8px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">FILTRAR</button>
+        <button onclick="renderizarGestaoReposicao()" style="background: var(--azul); color: white; border: none; padding: 8px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">FILTRAR & CALCULAR</button>
     </div>
     
     <div class="grid-financeiro">
         <div class="stat-box" style="background: var(--azul);">
-            <small>CUSTO DO FORNECEDOR (TOTAL)</small>
+            <small>REPOSIÇÃO DE ESTOQUE</small>
             <h2 id="fin-custo-total">R$ 0,00</h2>
-            <p style="font-size: 0.7em;">(Dinheiro para recomprar o estoque vendido)</p>
+            <p style="font-size: 0.7em;">(Custo do Fornecedor no Período)</p>
         </div>
         <div class="stat-box" style="background: var(--sucesso);">
-            <small>LUCRO REAL PARA VOCÊ</small>
+            <small>LUCRO BRUTO DAS VENDAS</small>
             <h2 id="fin-lucro-total">R$ 0,00</h2>
-            <p style="font-size: 0.7em;">(Dinheiro livre para sua retirada)</p>
+            <p style="font-size: 0.7em;">(Vendas líquidas menos Custo Fornecedor)</p>
         </div>
-        <div class="stat-box" style="background: var(--info);">
-            <small>VENDAS BRUTAS DO PERÍODO</small>
-            <h2 id="fin-vendas-brutas">R$ 0,00</h2>
-            <p style="font-size: 0.7em;">(Soma total das entradas)</p>
+        <div class="stat-box" style="background: var(--perigo);">
+            <small>CUSTO OPERACIONAL TOTAL</small>
+            <h2 id="fin-custos-fixos-total">R$ 0,00</h2>
+            <p id="label-dias-filtrados" style="font-size: 0.7em;">(Soma de todos os custos do período)</p>
         </div>
-    </div>
-
-    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:15px; margin-bottom:20px;">
-        <div class="stat-box" style="background:#545b62; padding:10px; border-radius:6px;">
-            <small>DINHEIRO TOTAL</small>
-            <h3 id="fin-total-dinheiro" style="margin:5px 0 0 0;">R$ 0,00</h3>
-        </div>
-        <div class="stat-box" style="background:#17a2b8; padding:10px; border-radius:6px;">
-            <small>PIX TOTAL</small>
-            <h3 id="fin-total-pix" style="margin:5px 0 0 0;">R$ 0,00</h3>
-        </div>
-        <div class="stat-box" style="background:#007bff; padding:10px; border-radius:6px;">
-            <small>DÉBITO TOTAL</small>
-            <h3 id="fin-total-debito" style="margin:5px 0 0 0;">R$ 0,00</h3>
-        </div>
-        <div class="stat-box" style="background:#6f42c1; padding:10px; border-radius:6px;">
-            <small>CRÉDITO TOTAL</small>
-            <h3 id="fin-total-credito" style="margin:5px 0 0 0;">R$ 0,00</h3>
+        <div class="stat-box" style="background: #6f42c1;">
+            <small>LUCRO LÍQUIDO REAL SEU</small>
+            <h2 id="fin-lucro-liquido-real">R$ 0,00</h2>
+            <p style="font-size: 0.7em;">(Dinheiro limpo e livre para sua retirada)</p>
         </div>
     </div>
 
+    <div class="secao-custos">
+        <div class="painel-custos-fixos">
+            <h3>📋 Insira os Seus Custos (O sistema calcula por dia baseado em 30 dias)</h3>
+            
+            <div class="custo-campo">
+                <label>🏠 Aluguel Mensal R$ (Ex: 1000 = 33.33/dia):</label>
+                <input type="number" id="custo-aluguel" value="1000.00" step="0.01" oninput="calcularCustosDiariosVisuais()">
+            </div>
+            <div class="custo-campo">
+                <label>👤 Funcionária Mensal R$:</label>
+                <input type="number" id="custo-funcionaria" value="1350.00" step="0.01" oninput="calcularCustosDiariosVisuais()">
+            </div>
+            <div class="custo-campo">
+                <label>💧 Água Mensal R$ (Ex: 900 = 30.00/dia):</label>
+                <input type="number" id="custo-agua" value="900.00" step="0.01" oninput="calcularCustosDiariosVisuais()">
+            </div>
+            <div class="custo-campo">
+                <label>⚡ Luz Mensal R$:</label>
+                <input type="number" id="custo-luz" value="0.00" step="0.01" oninput="calcularCustosDiariosVisuais()">
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; font-size: 0.85em; color: #555; margin-bottom: 15px; border: 1px dashed #ccc;">
+                <b>Visualização do Custo por Dia Atual:</b><br>
+                • Aluguel/Dia: <span id="lbl-aluguel-dia">R$ 33,33</span> | 
+                • Funcionária/Dia: <span id="lbl-func-dia">R$ 45,00</span><br>
+                • Água/Dia: <span id="lbl-agua-dia">R$ 30,00</span> | 
+                • Luz/Dia: <span id="lbl-luz-dia">R$ 0,00</span>
+            </div>
+
+            <button onclick="salvarCustosFixosNuvem()" style="width:100%; background:var(--sucesso); color:white; padding:10px; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">💾 SALVAR VALORES MENSAIS</button>
+            
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
+            
+            <h3>➕ Lançar Custo Extra Esporádico (Sacolas, Frete, Manutenção...)</h3>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <input type="text" id="custo-outro-desc" placeholder="Ex: Compra de 500 sacolas plásticas" style="padding:8px; border:1px solid #ccc; border-radius:5px;">
+                <div style="display:flex; gap:10px;">
+                    <input type="number" id="custo-outro-valor" placeholder="Valor R$" style="padding:8px; border:1px solid #ccc; border-radius:5px; flex:1;">
+                    <button onclick="adicionarOutroCusto()" style="background:var(--info); color:white; border:none; padding:8px 15px; border-radius:5px; font-weight:bold; cursor:pointer;">➕ ADICIONAR</button>
+                </div>
+            </div>
+
+            <div class="painel-metas" id="painel-metas-diarias"></div>
+        </div>
+
+        <div class="bloquinho-notas">
+            <h3>📝 Bloquinho de Notas (Custos Proporcionais Aplicados)</h3>
+            <p style="margin: 0; font-size:0.8em; color:#795548;">Exibição detalhada calculada por dia de acordo com as datas filtradas:</p>
+            <div class="lista-bloquinho" id="bloquinho-corpo"></div>
+        </div>
+    </div>
+
+    <div style="display:none;">
+        <h3 id="fin-total-dinheiro">R$ 0,00</h3><h3 id="fin-total-pix">R$ 0,00</h3>
+        <h3 id="fin-total-debito">R$ 0,00</h3><h3 id="fin-total-credito">R$ 0,00</h3>
+        <span id="fin-vendas-brutas">R$ 0,00</span>
+    </div>
     <div id="lista-alertas-reposicao"></div>
 </div>
 
@@ -225,22 +278,22 @@
 <div id="relatorio" class="content">
     <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap:20px;">
         <div style="background:white; padding:15px; border-radius:8px; border:1px solid #ddd;">
-            <h3>💸 Saída de Caixa</h3>
+            <h3>💸 Saída de Caixa Rápida</h3>
             <input type="text" id="gasto-desc" placeholder="Motivo" style="width:100%; margin-bottom:10px; padding:10px; box-sizing:border-box;">
             <input type="number" id="gasto-valor" placeholder="Valor R$" style="width:100%; margin-bottom:10px; padding:10px; box-sizing:border-box;">
             <button onclick="lancarGasto()" style="width:100%; background:var(--perigo); color:white; border:none; padding:12px; border-radius:5px; cursor:pointer;">REGISTRAR GASTO</button>
             <hr>
-            <h3>📅 Relatório por Período</h3>
+            <h3>📅 Filtrar Relatório de Vendas</h3>
             <label>De:</label><input type="date" id="filtro-data-inicio" style="width:100%; padding:8px; margin-bottom:10px;">
             <label>Até:</label><input type="date" id="filtro-data-fim" style="width:100%; padding:8px; margin-bottom:10px;">
             <button onclick="renderizarRelatorio()" style="width:100%; background:var(--azul); color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; font-weight:bold;">🔍 GERAR RELATÓRIO</button>
         </div>
         <div style="background:white; padding:15px; border-radius:8px; border:1px solid #ddd;">
-            <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 10px;"><h3 id="titulo-relatorio">📊 Fechamento do Dia</h3></div>
+            <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 10px;"><h3 id="titulo-relatorio">📊 Fechamento do Caixa</h3></div>
             <div id="resumo-html-v8" style="background:#f0f4f8; padding:15px; border-radius:8px; border-left: 5px solid var(--azul); font-family: monospace; white-space: pre-wrap;"></div>
             <hr id="gerente-hr-1">
             <div id="resumo-mensal-v8" style="background:#e8f5e9; padding:15px; border-radius:8px; border-left: 5px solid var(--sucesso); font-family: monospace; white-space: pre-wrap; margin-top:10px;"></div>
-            <button onclick="imprimirRelatorioDia()" style="margin-top:15px; background:var(--info); color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; width:100%; font-weight:bold;">🖨️ IMPRIMIR RESUMO COMPLETO</button>
+            <button onclick="imprimirRelatorioDia()" style="margin-top:15px; background:var(--info); color:white; border:none; padding:12px; border-radius:5px; cursor:pointer; width:100%; font-weight:bold;">🖨️ IMPRIMIR RESUMO</button>
         </div>
     </div>
     <hr style="margin: 25px 0;">
@@ -263,15 +316,16 @@
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
 <script>
-    const firebaseConfig = {
-        databaseURL: "https://jc-pescados-default-rtdb.firebaseio.com/"
-    };
-
+    const firebaseConfig = { databaseURL: "https://jc-pescados-default-rtdb.firebaseio.com/" };
     firebase.initializeApp(firebaseConfig);
     const fbDatabase = firebase.database();
 
     let produtosCache = [], carrinho = [], lojaAberta = false, valorAbertura = 0, itemAtual = null, taxaSelecionada = 0;
     let nivelAcessoAtual = "";
+    
+    // Armazenamento inicial como valores Mensais padrão fornecidos
+    let custosMensaisCache = { aluguel: 1000.00, funcionaria: 1350.00, agua: 900.00, luz: 0.00 };
+    let outrosCustosCache = [];
 
     const SENHA_MASTER = "Lima4ever!@#";
     const SENHA_FUNCIONARIO = "admin";
@@ -285,6 +339,7 @@
         document.getElementById('rep-data-fim').value = hoje;
         
         sincronizarProdutosRealtime();
+        sincronizarCustosRealtime();
         atualizarUIStatus();
     }
 
@@ -295,33 +350,19 @@
             document.getElementById('caixa-agora-container').style.display = "inline-block";
             document.getElementById('screen-login').style.display = "none";
             document.getElementById('input-senha-login').value = "";
-            document.getElementById('btn-toggle-loja').style.display = "none"; // Oculta o botão abrir caixa
-            
-            // Força a abertura automática se o caixa estiver fechado
-            if(!lojaAberta) {
-                lojaAberta = true;
-                valorAbertura = 0;
-                atualizarUIStatus();
-            }
-            
+            document.getElementById('btn-toggle-loja').style.display = "none";
+            if(!lojaAberta) { lojaAberta = true; valorAbertura = 0; atualizarUIStatus(); }
             realizarMudancaAba('vendas', null);
         } else if (pass === SENHA_FUNCIONARIO) {
             nivelAcessoAtual = "FUNCIONARIO";
             document.getElementById('caixa-agora-container').style.display = "none";
             document.getElementById('screen-login').style.display = "none";
             document.getElementById('input-senha-login').value = "";
-            document.getElementById('btn-toggle-loja').style.display = "none"; // Oculta o botão abrir caixa
-            
-            // Força a abertura automática se o caixa estiver fechado
-            if(!lojaAberta) {
-                lojaAberta = true;
-                valorAbertura = 0;
-                atualizarUIStatus();
-            }
-            
+            document.getElementById('btn-toggle-loja').style.display = "none";
+            if(!lojaAberta) { lojaAberta = true; valorAbertura = 0; atualizarUIStatus(); }
             realizarMudancaAba('vendas', null);
         } else {
-            alert("Senha incorreta! Acesso negado.");
+            alert("Senha incorreta!");
         }
     }
 
@@ -338,27 +379,111 @@
             const dados = snapshot.val();
             produtosCache = dados ? Object.values(dados) : [];
             renderizarPDV();
-            verifyAlertasEstoque(); // Chamando mapeado dinamicamente para o nome correto abaixo
+            verifyAlertasEstoque(); 
         });
     }
 
+    function sincronizarCustosRealtime() {
+        fbDatabase.ref("custos_mensais_loja").on("value", snapshot => {
+            if(snapshot.exists()) {
+                custosMensaisCache = snapshot.val();
+                document.getElementById('custo-aluguel').value = custosMensaisCache.aluguel || 0;
+                document.getElementById('custo-funcionaria').value = custosMensaisCache.funcionaria || 0;
+                document.getElementById('custo-agua').value = custosMensaisCache.agua || 0;
+                document.getElementById('custo-luz').value = custosMensaisCache.luz || 0;
+            }
+            calcularCustosDiariosVisuais();
+            renderizarGestaoReposicao();
+        });
+
+        fbDatabase.ref("outros_custos_v2").on("value", snapshot => {
+            outrosCustosCache = snapshot.val() ? Object.values(snapshot.val()) : [];
+            renderizarGestaoReposicao();
+        });
+    }
+
+    // Calcula visualmente os custos por dia dividindo por 30 na interface
+    function calcularCustosDiariosVisuais() {
+        const aluguelM = parseFloat(document.getElementById('custo-aluguel').value) || 0;
+        const funcM = parseFloat(document.getElementById('custo-funcionaria').value) || 0;
+        const aguaM = parseFloat(document.getElementById('custo-agua').value) || 0;
+        const luzM = parseFloat(document.getElementById('custo-luz').value) || 0;
+
+        document.getElementById('lbl-aluguel-dia').innerText = `R$ ${(aluguelM / 30).toFixed(2)}`;
+        document.getElementById('lbl-func-dia').innerText = `R$ ${(funcM / 30).toFixed(2)}`;
+        document.getElementById('lbl-agua-dia').innerText = `R$ ${(aguaM / 30).toFixed(2)}`;
+        document.getElementById('lbl-luz-dia').innerText = `R$ ${(luzM / 30).toFixed(2)}`;
+    }
+
+    function salvarCustosFixosNuvem() {
+        if(nivelAcessoAtual !== "MASTER") return alert("Acesso restrito.");
+        const dados = {
+            aluguel: parseFloat(document.getElementById('custo-aluguel').value) || 0,
+            funcionaria: parseFloat(document.getElementById('custo-funcionaria').value) || 0,
+            agua: parseFloat(document.getElementById('custo-agua').value) || 0,
+            luz: parseFloat(document.getElementById('custo-luz').value) || 0
+        };
+        fbDatabase.ref("custos_mensais_loja").set(dados).then(() => {
+            alert("Valores mensais salvos! O sistema já recalculou o custo diário.");
+        });
+    }
+
+    function adicionarOutroCusto() {
+        if(nivelAcessoAtual !== "MASTER") return alert("Acesso restrito.");
+        const desc = document.getElementById('custo-outro-desc').value.trim();
+        const valor = parseFloat(document.getElementById('custo-outro-valor').value) || 0;
+        if(!desc || valor <= 0) return alert("Preencha os campos corretamente!");
+        
+        const novoRef = fbDatabase.ref("outros_custos_v2").push();
+        const dataAtual = new Date();
+        const item = {
+            id: novoRef.key,
+            desc: desc.toUpperCase(),
+            valor: valor,
+            data: dataAtual.toLocaleDateString('pt-BR'),
+            dataObj: dataAtual.toISOString().split('T')[0]
+        };
+        novoRef.set(item).then(() => {
+            document.getElementById('custo-outro-desc').value = "";
+            document.getElementById('custo-outro-valor').value = "";
+        });
+    }
+
+    function removerOutroCusto(id) {
+        if(nivelAcessoAtual !== "MASTER") return alert("Ação restrita.");
+        if(confirm("Remover este custo extra?")) { fbDatabase.ref(`outros_custos_v2/${id}`).remove(); }
+    }
+
     function verifyAlertasEstoque() {
-        const bassoEstoque = produtosCache.filter(p => p.estoque <= 5);
+        const baixo = produtosCache.filter(p => p.estoque <= 5);
         const badge = document.getElementById('badge-alerta');
-        if (bassoEstoque.length > 0) { badge.style.display = 'block'; badge.innerText = bassoEstoque.length; }
-        else { badge.style.display = 'none'; }
+        if (badge) {
+            if (baixo.length > 0) { badge.style.display = 'block'; badge.innerText = baixo.length; }
+            else { badge.style.display = 'none'; }
+        }
     }
 
     function verificarAlertasEstoque() {
         verifyAlertasEstoque();
     }
 
+    // GESTÃO DE REPOSIÇÃO, CUSTOS DIÁRIOS E DIRECIONAMENTO DE METAS
     function renderizarGestaoReposicao() {
         if(nivelAcessoAtual === "FUNCIONARIO") return;
         const container = document.getElementById('lista-alertas-reposicao');
+        if(!container) return;
+        
         const dInicio = document.getElementById('rep-data-inicio').value;
         const dFim = document.getElementById('rep-data-fim').value;
         
+        // Conta a quantidade de dias selecionados no calendário
+        const data1 = new Date(dInicio + "T12:00:00");
+        const data2 = new Date(dFim + "T12:00:00");
+        const diferencaTempo = Math.abs(data2 - data1);
+        const qtdDiasFiltrados = Math.ceil(diferencaTempo / (1000 * 60 * 60 * 24)) + 1;
+        
+        document.getElementById('label-dias-filtrados').innerText = `(Soma proporcional de ${qtdDiasFiltrados} dia(s) filtrado(s))`;
+
         fbDatabase.ref("vendas").once("value", snapshot => {
             const todasVendas = snapshot.val() ? Object.values(snapshot.val()) : [];
             const vendasPeriodo = todasVendas.filter(v => {
@@ -387,28 +512,92 @@
                 }
             });
 
+            // Lógica Central: Divide o valor total que você configurou por 30 dias fixos
+            const cAluguelDia = (custosMensaisCache.aluguel || 0) / 30;
+            const cFuncDia = (custosMensaisCache.funcionaria || 0) / 30;
+            const cAguaDia = (custosMensaisCache.agua || 0) / 30;
+            const cLuzDia = (custosMensaisCache.luz || 0) / 30;
+            const custoFixoTotalPorDia = cAluguelDia + cFuncDia + cAguaDia + cLuzDia;
+
+            // Multiplica o custo diário obtido pela quantidade de dias que você está olhando no filtro
+            const cAluguelPeriodo = cAluguelDia * qtdDiasFiltrados;
+            const cFuncPeriodo = cFuncDia * qtdDiasFiltrados;
+            const cAguaPeriodo = cAguaDia * qtdDiasFiltrados;
+            const cLuzPeriodo = cLuzDia * qtdDiasFiltrados;
+
+            // Filtra os custos extras lançados que aconteceram dentro desse período
+            const extrasNoPeriodo = outrosCustosCache.filter(c => {
+                const dataC = c.dataObj || c.data.split('/').reverse().join('-');
+                return dataC >= dInicio && dataC <= dFim;
+            });
+
+            let totOutrosCustos = 0;
+            let bloquinhoHtml = "";
+
+            // Montagem do detalhamento exato item por item no bloquinho
+            bloquinhoHtml += `<div class="item-bloquinho"><span>🏠 ALUGUEL (${qtdDiasFiltrados}d × R$ ${cAluguelDia.toFixed(2)}):</span><b>R$ ${cAluguelPeriodo.toFixed(2)}</b></div>`;
+            bloquinhoHtml += `<div class="item-bloquinho"><span>👤 FUNCIONÁRIA (${qtdDiasFiltrados}d × R$ ${cFuncDia.toFixed(2)}):</span><b>R$ ${cFuncPeriodo.toFixed(2)}</b></div>`;
+            bloquinhoHtml += `<div class="item-bloquinho"><span>💧 CONTA DE ÁGUA (${qtdDiasFiltrados}d × R$ ${cAguaDia.toFixed(2)}):</span><b>R$ ${cAguaPeriodo.toFixed(2)}</b></div>`;
+            bloquinhoHtml += `<div class="item-bloquinho"><span>⚡ CONTA DE LUZ (${qtdDiasFiltrados}d × R$ ${cLuzDia.toFixed(2)}):</span><b>R$ ${cLuzPeriodo.toFixed(2)}</b></div>`;
+            bloquinhoHtml += `<div style="border-bottom:2px dashed #bcaaa4; margin:10px 0; text-align:center; font-weight:bold; color:#5d4037; font-size:0.9em;">GASTOS EXTRAS NO INTERVALO</div>`;
+
+            extrasNoPeriodo.forEach(c => {
+                totOutrosCustos += c.valor;
+                bloquinhoHtml += `<div class="item-bloquinho" style="flex-direction:column; align-items:flex-start; background:white; padding:6px; margin-bottom:5px; border-radius:4px; border:1px solid #e0e0e0;">
+                    <div style="display:flex; justify-content:space-between; width:100%;">
+                        <span style="font-weight:bold; color:#c62828;">📌 GASTO ESPORÁDICO (${c.data}):</span>
+                        <b>R$ ${c.valor.toFixed(2)} <a href="#" onclick="removerOutroCusto('${c.id}')" style="color:red; text-decoration:none; margin-left:5px;">[X]</a></b>
+                    </div>
+                    <div style="color:#333; margin-top:2px;">${c.desc}</div>
+                </div>`;
+            });
+
+            const totalCustosTudo = cAluguelPeriodo + cFuncPeriodo + cAguaPeriodo + cLuzPeriodo + totOutrosCustos;
+            
+            // O Lucro Líquido Real desconta os custos do fornecedor e os custos operacionais diários mapeados
+            const lucroLiquidoRealFinal = lucroGeral - totalCustosTudo;
+
+            document.getElementById('bloquinho-corpo').innerHTML = bloquinhoHtml;
+
+            // Painel de orientação de metas diárias necessárias para ter lucro
+            const margemMediaLucro = vendaBruta > 0 ? (lucroGeral / vendaBruta) : 0.40; 
+            const faturamentoMetaDiario = margemMediaLucro > 0 ? (custoFixoTotalPorDia / margemMediaLucro) : 0;
+
+            document.getElementById('painel-metas-diarias').innerHTML = `
+                <b>🎯 O QUE FAZER POR DIA PARA PAGAR AS CONTAS E TER LUCRO:</b><br>
+                • Custo fixo real diário da sua estrutura: <b style="color:red;">R$ ${custoFixoTotalPorDia.toFixed(2)} por dia</b>.<br>
+                • Baseado na sua margem de lucro atual, você precisa faturar no caixa no mínimo de <b>R$ ${faturamentoMetaDiario.toFixed(2)} por dia</b> apenas para cobrir os custos operacionais.<br>
+                • Tudo o que você vender <u>acima</u> desse valor diário passa a construir o seu <b>Lucro Líquido Real</b> livre.
+            `;
+
             document.getElementById('fin-total-dinheiro').innerText = `R$ ${money(totDinheiro).toFixed(2)}`;
             document.getElementById('fin-total-pix').innerText = `R$ ${money(totPix).toFixed(2)}`;
             document.getElementById('fin-total-debito').innerText = `R$ ${money(totDebito).toFixed(2)}`;
             document.getElementById('fin-total-credito').innerText = `R$ ${money(totCredito).toFixed(2)}`;
 
+            document.getElementById('fin-custos-fixos-total').innerText = `R$ ${totalCustosTudo.toFixed(2)}`;
+            document.getElementById('fin-lucro-liquido-real').innerText = `R$ ${lucroLiquidoRealFinal.toFixed(2)}`;
+
             let tabelaDetalhada = `
                 <div id="relatorio-reposicao-print">
-                    <h2 style="text-align:center; color:black;"><b>📊 RELATÓRIO DE REPOSIÇÃO E LUCRO</b></h2>
-                    <div style="color:black; font-family:monospace; margin-bottom:15px; font-size:11px;">
-                        <b>MEIOS DE PAGAMENTO DO PERÍODO:</b><br>
-                        DINHEIRO: R$ ${money(totDinheiro).toFixed(2)}<br>
-                        PIX:      R$ ${money(totPix).toFixed(2)}<br>
-                        DÉBITO:   R$ ${money(totDebito).toFixed(2)}<br>
-                        CRÉDITO:  R$ ${money(totCredito).toFixed(2)}
+                    <h2 style="text-align:center; color:black; margin-bottom:5px;"><b>📊 RELATÓRIO DE LUCRO LÍQUIDO REAL</b></h2>
+                    <p style="text-align:center; margin:0; font-family:monospace; font-size:11px;">JC PESCADOS - IMPRESSÃO DE PERFORMANCE</p>
+                    <hr style="border-top:1px dashed black;">
+                    <div style="color:black; font-family:monospace; font-size:11px; line-height:1.4;">
+                        <b>PERÍODO:</b> ${dInicio.split('-').reverse().join('/')} até ${dFim.split('-').reverse().join('/')} (${qtdDiasFiltrados} dias)<br>
+                        <b>CUSTO OPERACIONAL/DIA:</b> R$ ${custoFixoTotalPorDia.toFixed(2)}<br>
+                        ----------------------------------------<br>
+                        <b>ENTRADAS BRUTAS POR MEIO:</b><br>
+                        DINHEIRO: R$ ${money(totDinheiro).toFixed(2)} | PIX: R$ ${money(totPix).toFixed(2)}<br>
+                        DÉBITO:   R$ ${money(totDebito).toFixed(2)} | CRÉDITO: R$ ${money(totCredito).toFixed(2)}
                     </div>
-                    <table style="width:100%; border-collapse: collapse; margin-top:20px; color:black; font-family: monospace;">
+                    <table style="width:100%; border-collapse: collapse; margin-top:15px; color:black; font-family: monospace; font-size:11px;">
                         <thead>
                             <tr style="border-bottom: 2px solid black;">
-                                <th style="text-align:left; padding:8px;"><b>ITEM</b></th>
-                                <th style="text-align:center; padding:8px;"><b>QTD</b></th>
-                                <th style="text-align:center; padding:8px;"><b>FORNEC.</b></th>
-                                <th style="text-align:center; padding:8px;"><b>LUCRO</b></th>
+                                <th style="text-align:left;"><b>ITEM</b></th>
+                                <th style="text-align:center;"><b>QTD</b></th>
+                                <th style="text-align:center;"><b>FORNEC.</b></th>
+                                <th style="text-align:center;"><b>LUCRO B.</b></th>
                             </tr>
                         </thead>
                         <tbody>`;
@@ -417,12 +606,13 @@
                 const qtdV = vendasPeriodo.reduce((acc, v) => acc + v.itens.filter(i => i.nome === p.nome).reduce((s, it) => s + it.qtd, 0), 0);
                 if(qtdV > 0) {
                     const cForn = money(qtdV * p.custo);
+                    const lBrutoItem = money(vendasPeriodo.reduce((acc, v) => acc + v.itens.filter(i => i.nome === p.nome).reduce((s, it) => s + ((it.venda * it.qtd) - (it.custo * it.qtd)), 0), 0));
                     tabelaDetalhada += `
                         <tr style="border-bottom: 1px solid #ddd;">
-                            <td style="padding:8px;"><b>${p.nome}</b></td>
-                            <td style="text-align:center; padding:8px;"><b>${qtdV.toFixed(3)}</b></td>
-                            <td style="text-align:center; padding:8px;"><b>R$ ${cForn.toFixed(2)}</b></td>
-                            <td style="text-align:center; padding:8px;"><b>R$ ${money(vendasPeriodo.reduce((acc, v) => acc + v.itens.filter(i => i.nome === p.nome).reduce((s, it) => s + ( (it.venda * it.qtd) - (it.custo * it.qtd) ), 0), 0)).toFixed(2)}</b></td>
+                            <td style="padding:4px 0;"><b>${p.nome}</b></td>
+                            <td style="text-align:center;"><b>${qtdV.toFixed(3)}</b></td>
+                            <td style="text-align:center;"><b>R$ ${cForn.toFixed(2)}</b></td>
+                            <td style="text-align:center;"><b>R$ ${lBrutoItem.toFixed(2)}</b></td>
                         </tr>`;
 
                     const corBorda = p.estoque <= 2 ? 'red' : (p.estoque <= 5 ? 'orange' : '#28a745');
@@ -430,7 +620,7 @@
                         <div class="card-reposicao" style="border-left-color: ${corBorda}">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <div><h3 style="margin:0">${p.nome}</h3><small>${p.categoria} | ${p.medida}</small></div>
-                                <div style="text-align:right"><span style="font-weight:bold; color:${p.estoque <= 5 ? 'red' : 'green'}">ESTOQUE ATUAL: ${p.estoque.toFixed(3)}</span></div>
+                                <div style="text-align:right"><span style="font-weight:bold; color:${p.estoque <= 5 ? 'red' : 'green'}">ESTOQUE: ${p.estoque.toFixed(3)}</span></div>
                             </div>
                         </div>`;
                 }
@@ -442,28 +632,24 @@
                 const lucroRapido = money(totalVendasRapidasValor - custoRapido);
                 tabelaDetalhada += `
                     <tr style="border-bottom: 1px solid #ddd;">
-                        <td style="padding:8px;"><b>VENDA RAPIDA VALOR</b></td>
-                        <td style="text-align:center; padding:8px;"><b>-</b></td>
-                        <td style="text-align:center; padding:8px;"><b>R$ ${custoRapido.toFixed(2)}</b></td>
-                        <td style="text-align:center; padding:8px;"><b>R$ ${lucroRapido.toFixed(2)}</b></td>
+                        <td style="padding:4px 0;"><b>VENDA RAPIDA VALOR</b></td>
+                        <td style="text-align:center;"><b>-</b></td>
+                        <td style="text-align:center;"><b>R$ ${custoRapido.toFixed(2)}</b></td>
+                        <td style="text-align:center;"><b>R$ ${lucroRapido.toFixed(2)}</b></td>
                     </tr>`;
             }
 
             tabelaDetalhada += `
                         </tbody>
-                        <tfoot>
-                            <tr style="border-top: 2px solid black;">
-                                <td colspan="2" style="padding:10px; text-align:right;"><b>TOTAIS:</b></td>
-                                <td style="text-align:center;"><b>R$ ${custoGeral.toFixed(2)}</b></td>
-                                <td style="text-align:center;"><b>R$ ${lucroGeral.toFixed(2)}</b></td>
-                            </tr>
-                        </tfoot>
                     </table>
-                    <div style="margin-top:15px; text-align:right; font-size:1.1em;">
-                        <b>LUCRO LÍQUIDO REAL: R$ ${lucroGeral.toFixed(2)}</b>
+                    <hr style="border-top:1px dashed black; margin-top:15px;">
+                    <div style="font-family:monospace; font-size:11px; text-align:right; line-height:1.5;">
+                        <b>LUCRO BRUTO DAS VENDAS: R$ ${lucroGeral.toFixed(2)}</b><br>
+                        <span style="color:red;">(-) CONTAS OPERACIONAIS (${qtdDiasFiltrados} dias): R$ ${totalCustosTudo.toFixed(2)}</span><br>
+                        <b style="font-size:12px; color:green;">(=) LUCRO LÍQUIDO REAL SEU: R$ ${lucroLiquidoRealFinal.toFixed(2)}</b>
                     </div>
                 </div>
-                <button onclick="imprimirRelatorioReposicao()" style="margin-top:10px; background:var(--info); color:white; border:none; padding:15px; border-radius:5px; width:100%; font-weight:bold;">🖨️ IMPRIMIR RELATÓRIO DETALHADO (TELA E TÉRMICA)</button>
+                <button onclick="imprimirRelatorioReposicao()" style="margin-top:10px; background:var(--info); color:white; border:none; padding:12px; border-radius:5px; width:100%; font-weight:bold; cursor:pointer;">🖨️ IMPRIMIR COMPROVANTE DE LUCRO REAL</button>
                 <hr style="margin:25px 0;">
             `;
 
@@ -816,7 +1002,6 @@
         let dFim = document.getElementById('filtro-data-fim').value;
         const hojeData = new Date().toISOString().split('T')[0];
 
-        // Restrição solicitada: Se o nível de acesso for FUNCIONARIO (senha admin), força as datas para o dia atual, impedindo a filtragem por período histórico
         if (nivelAcessoAtual === "FUNCIONARIO") {
             dInicio = hojeData;
             dFim = hojeData;
@@ -1040,7 +1225,7 @@ ${v.metodo.split(" | ").join("\n")}
         const m = document.getElementById('nova-medida').value; 
         if(!n) return;
         
-        const novo = { nome: n, categoria: c, medida: m, estoque: 0, custo: 0, venda: 0 };
+        const novo = { nome: n, category: c, medida: m, estoque: 0, custo: 0, venda: 0 };
         fbDatabase.ref(`produtos/${n}`).set(novo).then(() => {
             document.getElementById('novo-nome').value = ""; 
             document.getElementById('nova-categoria').value = ""; 
@@ -1049,7 +1234,7 @@ ${v.metodo.split(" | ").join("\n")}
     
     function excluirProd(n) { 
         if(nivelAcessoAtual !== "MASTER") return;
-        if(confirm("Remover permanentemente o produto?")) { fbDatabase.ref(`produtos/${n}`).remove(); }
+        if(confirm("Remover permanentemente este produto?")) { fbDatabase.ref(`produtos/${n}`).remove(); }
     }
     
     setInterval(() => { let r = document.getElementById('relogio'); if(r) r.innerText = new Date().toLocaleString('pt-BR'); }, 1000);

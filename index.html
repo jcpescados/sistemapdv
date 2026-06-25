@@ -7,7 +7,7 @@
         :root { --azul: #0056b3; --azul-escuro: #003d80; --sucesso: #28a745; --perigo: #dc3545; --info: #17a2b8; --alerta: #ffc107; }
         body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
         
-        /* Nova Tela de Login Moderna */
+        /* Tela de Login Moderna */
         #screen-login { position: fixed; top:0; left:0; width:100vw; height:100vh; background: linear-gradient(135deg, #002b5c 0%, #0056b3 100%); z-index: 9999; display: flex; align-items: center; justify-content: center; }
         .login-card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); width: 100%; max-width: 400px; text-align: center; }
         .login-card h2 { color: var(--azul-escuro); margin-bottom: 5px; font-size: 1.8em; }
@@ -53,7 +53,6 @@
         .meios-pagamento-container label { font-size: 0.75em; font-weight: bold; margin-bottom: 2px; color: #333; }
         .meios-pagamento-container input { padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-weight: bold; }
 
-        /* Classes específicas para a seção de Custos Operacionais */
         .secao-custos { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 25px; text-align: left; }
         .painel-custos-fixos, .bloquinho-notas { background: white; padding: 20px; border-radius: 12px; border: 1px solid #ddd; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         .custo-campo { display: flex; flex-direction: column; margin-bottom: 12px; }
@@ -62,6 +61,10 @@
         .lista-bloquinho { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; font-family: monospace; font-size: 0.95em; }
         .item-bloquinho { display: flex; justify-content: space-between; border-bottom: 1px dashed #e0e0e0; padding-bottom: 6px; color: #5d4037; }
         .painel-metas { background: #e8f5e9; border-left: 5px solid var(--sucesso); padding: 15px; border-radius: 8px; margin-top: 20px; font-size: 0.9em; line-height: 1.5; color: #2e7d32; }
+
+        /* Inputs estilizados para a Tabela de Estoque */
+        .input-estoque-tabela { width: 90%; padding: 5px; border: 1px solid #ccc; border-radius: 4px; text-align: center; box-sizing: border-box; }
+        .input-estoque-tabela:focus { border-color: var(--azul); outline: none; }
 
         #print-area { display: none; }
         @media print { 
@@ -262,18 +265,25 @@
 </div>
 
 <div id="estoque" class="content">
-    <div style="background:#e9ecef; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; gap:10px;">
-        <input type="text" id="novo-nome" placeholder="Produto" style="flex:2; padding:8px;">
-        <input type="text" id="nova-categoria" placeholder="Categoria" style="flex:1; padding:8px;">
+    <div style="background:#e9ecef; padding:15px; border-radius:8px; margin-bottom:20px; display:flex; gap:10px; align-items: center;">
+        <input type="text" id="novo-nome" placeholder="Nome do Produto" style="flex:2; padding:8px;">
+        
+        <select id="nova-categoria-select" onchange="verificarNovaCategoriaOpcao(this.value)" style="flex:1; padding:8px;">
+            <option value="GERAL">GERAL</option>
+            <option value="__NOVA__">➕ CRIAR NOVA CATEGORIA...</option>
+        </select>
+        
+        <input type="text" id="nova-categoria-input-texto" placeholder="Digite a Nova Categoria" style="flex:1; padding:8px; display:none;">
+        
         <select id="nova-medida" style="padding:8px;"><option value="UND">UND</option><option value="KG">KG</option></select>
-        <button onclick="cadastrarNovo()" style="background:var(--sucesso); color:white; border:none; padding:10px; border-radius:5px; cursor:pointer;">＋ CADASTRAR</button>
+        <button onclick="cadastrarNovo()" style="background:var(--sucesso); color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; font-weight:bold;">＋ CADASTRAR</button>
     </div>
     <table style="width:100%; border-collapse: collapse; background:white;">
         <thead style="background: var(--azul); color: white;">
             <tr>
                 <th style="padding:12px;">Item / Nome</th>
-                <th>Medida</th>
                 <th>Categoria</th>
+                <th>Medida</th>
                 <th>Estoque</th>
                 <th>Custo R$</th>
                 <th>Venda R$</th>
@@ -332,6 +342,7 @@
 
     let produtosCache = [], carrinho = [], lojaAberta = false, valorAbertura = 0, itemAtual = null, taxaSelecionada = 0;
     let nivelAcessoAtual = "";
+    let listaCategoriasUnicas = ["GERAL"]; // Cache para guardar as categorias existentes
     
     let custosMensaisCache = { aluguel: 1000.00, funcionaria: 1350.00, agua: 900.00, luz: 0.00 };
     let outrosCustosCache = [];
@@ -350,6 +361,11 @@
         sincronizarProdutosRealtime();
         sincronizarCustosRealtime();
         atualizarUIStatus();
+        
+        setInterval(() => {
+            const d = new Date();
+            document.getElementById('relogio').innerText = d.toLocaleDateString('pt-BR') + " " + d.toLocaleTimeString('pt-BR');
+        }, 1000);
     }
 
     function realizarLogin() {
@@ -387,19 +403,75 @@
         fbDatabase.ref("produtos").on("value", snapshot => {
             const dados = snapshot.val();
             produtosCache = [];
-            if(dados) {
-                Object.values(dados).forEach(p => {
-                    // Correção essencial: se o item vier com 'category', converte para 'categoria'
-                    if (p.category && !p.categoria) {
-                        p.categoria = p.category;
-                    }
-                    if (!p.categoria) p.categoria = "GERAL";
-                    produtosCache.push(p);
+            let catsEncontradas = new Set(["GERAL"]); // Conjunto para evitar duplicados
+
+            if(dados){
+                Object.keys(dados).forEach(key => {
+                    let p = dados[key];
+                    let catLimpa = (p.categoria || p.category || "GERAL").toUpperCase().trim();
+                    if(catLimpa) catsEncontradas.add(catLimpa);
+
+                    produtosCache.push({
+                        id: key, 
+                        nome: p.nome || key,
+                        categoria: catLimpa,
+                        medida: p.medida || "KG",
+                        estoque: parseFloat(p.estoque) || 0,
+                        custo: parseFloat(p.custo) || 0,
+                        venda: parseFloat(p.venda) || 0
+                    });
                 });
             }
+
+            listaCategoriasUnicas = Array.from(catsEncontradas).sort();
+            atualizarSelectCadastroNovos(); // Atualiza a lista suspensa de cadastro
+
             renderizarPDV();
             verifyAlertasEstoque(); 
+            if(document.getElementById('estoque').classList.contains('active')){
+                renderizarEstoque();
+            }
         });
+    }
+
+    // Alimenta o select da barra de cadastro de produtos
+    function atualizarSelectCadastroNovos() {
+        const select = document.getElementById('nova-categoria-select');
+        if(!select) return;
+        
+        let valorSelecionadoAnteriormente = select.value;
+        select.innerHTML = "";
+
+        listaCategoriasUnicas.forEach(cat => {
+            let opt = document.createElement('option');
+            opt.value = cat;
+            opt.textContent = cat;
+            select.appendChild(opt);
+        });
+
+        // Adiciona a opção coringa para criar uma nova no final do select
+        let optNova = document.createElement('option');
+        optNova.value = "__NOVA__";
+        optNova.textContent = "➕ CRIAR NOVA CATEGORIA...";
+        select.appendChild(optNova);
+
+        if([...select.options].some(o => o.value === valorSelecionadoAnteriormente)) {
+            select.value = valorSelecionadoAnteriormente;
+        } else {
+            select.value = "GERAL";
+        }
+    }
+
+    // Mostra/oculta o campo de texto dependendo se escolheu "Criar nova categoria..."
+    function verificarNovaCategoriaOpcao(valor) {
+        const inputTexto = document.getElementById('nova-categoria-input-texto');
+        if(valor === "__NOVA__") {
+            inputTexto.style.display = "inline-block";
+            inputTexto.focus();
+        } else {
+            inputTexto.style.display = "none";
+            inputTexto.value = "";
+        }
     }
 
     function sincronizarCustosRealtime() {
@@ -454,30 +526,436 @@
         
         const novoRef = fbDatabase.ref("outros_custos_v2").push();
         const dataAtual = new Date();
-        const item = {
+        const obj = {
             id: novoRef.key,
-            desc: desc.toUpperCase(),
+            desc: desc,
             valor: valor,
             data: dataAtual.toLocaleDateString('pt-BR'),
             dataObj: dataAtual.toISOString().split('T')[0]
         };
-        novoRef.set(item).then(() => {
+        novoRef.set(obj).then(() => {
             document.getElementById('custo-outro-desc').value = "";
             document.getElementById('custo-outro-valor').value = "";
+            alert("Custo lançado com sucesso!");
         });
     }
 
     function removerOutroCusto(id) {
-        if(nivelAcessoAtual !== "MASTER") return alert("Ação restrita.");
-        if(confirm("Remover este custo extra?")) { fbDatabase.ref(`outros_custos_v2/${id}`).remove(); }
+        if(nivelAcessoAtual !== "MASTER") return alert("Acesso restrito.");
+        if(confirm("Deseja remover este custo?")) {
+            fbDatabase.ref(`outros_custos_v2/${id}`).remove();
+        }
+    }
+
+    function renderizarPDV() {
+        const container = document.getElementById('pdv-categorias-dinamicas');
+        if(!container) return;
+        container.innerHTML = "";
+
+        const depar = {};
+        produtosCache.forEach(p => {
+            if(!depar[p.categoria]) depar[p.categoria] = [];
+            depar[p.categoria].push(p);
+        });
+
+        Object.keys(depar).sort().forEach(cat => {
+            const divCat = document.createElement('div');
+            divCat.className = "coluna-cat";
+            divCat.innerHTML = `<h4>${cat}</h4>`;
+
+            depar[cat].forEach(p => {
+                const bProd = document.createElement('div');
+                bProd.className = "card-prod";
+                bProd.innerHTML = `${p.nome}<br><span style="color:green">R$ ${p.venda.toFixed(2)} / ${p.medida}</span><span class="estoque-badge">Estoque: ${p.estoque.toFixed(3)}</span>`;
+                bProd.onclick = () => abrirModalVenda(p);
+                divCat.appendChild(bProd);
+            });
+            container.appendChild(divCat);
+        });
+    }
+
+    function abrirModalVenda(prod) {
+        itemAtual = prod;
+        document.getElementById('modal-nome-prod').innerText = prod.nome;
+        document.getElementById('label-tipo-medida').innerText = "Medida base: " + prod.medida;
+        document.getElementById('estoque-atual-aviso').innerText = "Estoque Atual: " + prod.estoque.toFixed(3);
+        document.getElementById('input-qtd-modal').value = prod.medida === "KG" ? "1.000" : "1";
+        document.getElementById('modal-selecao').style.display = 'flex';
+        setTimeout(() => document.getElementById('input-qtd-modal').select(), 100);
+    }
+
+    function fecharModal() {
+        document.getElementById('modal-selecao').style.display = 'none';
+    }
+
+    function confirmarAdicao() {
+        let qtd = parseFloat(document.getElementById('input-qtd-modal').value);
+        if (qtd > 0) {
+            if (qtd > itemAtual.estoque) {
+                alert("ERRO: Estoque insuficiente!");
+                return;
+            }
+            carrinho.push({ ...itemAtual, qtd });
+            renderCarrinho();
+            fecharModal();
+        }
+    }
+
+    function renderCarrinho() {
+        const lista = document.getElementById('lista-carrinho');
+        lista.innerHTML = carrinho.map((item, i) => `<div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid #eee;"><span><b>${item.qtd.toFixed(3)}</b> ${item.nome}</span><span>R$ ${money(item.venda * item.qtd).toFixed(2)} <button onclick="removerDoCarrinho(${i})" style="color:red; border:none; background:none; cursor:pointer;">[X]</button></span></div>`).join('');
+        calcularTotal();
+    }
+
+    window.removerDoCarrinho = function(i) {
+        carrinho.splice(i, 1);
+        renderCarrinho();
+    }
+
+    function calcularTotal() {
+        const sub = money(carrinho.reduce((a, b) => a + (b.venda * b.qtd), 0));
+        const desc = money(parseFloat(document.getElementById('desc-input').value) || 0);
+        document.getElementById('total-display').innerText = "R$ " + money(sub - desc).toFixed(2);
+        atualizarRestantePagamento();
+    }
+
+    function obtenerSomaDosPagamentos() {
+        const d = parseFloat(document.getElementById('pag-dinheiro').value) || 0;
+        const p = parseFloat(document.getElementById('pag-pix').value) || 0;
+        const deb = parseFloat(document.getElementById('pag-debito').value) || 0;
+        const cred = parseFloat(document.getElementById('pag-credito').value) || 0;
+        return money(d + p + deb + cred);
+    }
+
+    function atualizarRestantePagamento() {
+        const totalVenda = money(parseFloat(document.getElementById('total-display').innerText.replace("R$ ", "")));
+        const preenchido = obtenerSomaDosPagamentos();
+        const dif = money(totalVenda - preenchido);
+        const display = document.getElementById('restante-pagamento-display');
+        if(totalVenda === 0) {
+            display.innerText = "Carrinho vazio";
+            display.style.color = "gray";
+        } else if (dif > 0) {
+            display.innerText = `Falta preencher: R$ ${dif.toFixed(2)}`;
+            display.style.color = "var(--perigo)";
+        } else if (dif < 0) {
+            display.innerText = `Excesso / Troco: R$ ${Math.abs(dif).toFixed(2)}`;
+            display.style.color = "green";
+        } else {
+            display.innerText = "Valor Total Fechado perfeitamente!";
+            display.style.color = "var(--sucesso)";
+        }
+    }
+
+    function zerarCamposPagamento(){
+        document.getElementById('pag-dinheiro').value = 0;
+        document.getElementById('pag-pix').value = 0;
+        document.getElementById('pag-debito').value = 0;
+        document.getElementById('pag-credito').value = 0;
+    }
+
+    function verificarPagamento() {
+        if(carrinho.length === 0) return alert("Carrinho Vazio!");
+        const totalVenda = money(parseFloat(document.getElementById('total-display').innerText.replace("R$ ", "")));
+        const preenchido = obtenerSomaDosPagamentos();
+        if(preenchido < totalVenda) {
+            alert("A soma informada nos meios de pagamento é menor que o total da venda!");
+            return;
+        }
+        
+        const deb = parseFloat(document.getElementById('pag-debito').value) || 0;
+        const cred = parseFloat(document.getElementById('pag-credito').value) || 0;
+
+        if (deb > 0 || cred > 0) {
+            taxaSelecionada = 0;
+            document.getElementById('taxa-personalizada-input').value = 0;
+            const select = document.getElementById('select-qtd-parcelas');
+            select.innerHTML = "";
+            const maxParcelas = (cred > 0) ? 12 : 1;
+            for(let i=1; i<=maxParcelas; i++) {
+                let opt = document.createElement('option');
+                opt.value = i;
+                opt.text = i + "x Parcela(s)";
+                select.appendChild(opt);
+            }
+            if(cred > 0) document.getElementById('painel-parcelas').style.display = 'block';
+            else document.getElementById('painel-parcelas').style.display = 'none';
+            
+            ajustarTaxaModal(0);
+            document.getElementById('modal-taxa').style.display = 'flex';
+        } else {
+            finalizarVenda(0);
+        }
+    }
+
+    function adicionarTaxaFixa(valor) {
+        let abrirCampos = parseFloat(document.getElementById('taxa-personalizada-input').value) || 0;
+        document.getElementById('taxa-personalizada-input').value = (abrirCampos + valor).toFixed(2);
+        ajustarTaxaModal(document.getElementById('taxa-personalizada-input').value);
+    }
+
+    function ajustarTaxaModal(valorAdicional) {
+        const d = parseFloat(document.getElementById('pag-dinheiro').value) || 0;
+        const p = parseFloat(document.getElementById('pag-pix').value) || 0;
+        const deb = parseFloat(document.getElementById('pag-debito').value) || 0;
+        const cred = parseFloat(document.getElementById('pag-credito').value) || 0;
+        const totalVendaBase = money(d + p + deb + cred);
+        const valorCartaoBase = money(deb + cred);
+        let porcMaquineta = (deb > 0 && cred === 0) ? 1.99 : 5.31;
+        let presidential = money(parseFloat(valorAdicional) || 0);
+        taxaSelecionada = presidential;
+        const totalComAcrescimo = money(totalVendaBase + presidential);
+        const descontoMaquineta = money((valorCartaoBase + presidential) * (porcMaquineta / 100));
+        const liquido = money(totalComAcrescimo - descontoMaquineta);
+
+        document.getElementById('info-recebimento-detalhado').innerHTML = `Venda Base Total: <b>R$ ${totalVendaBase.toFixed(2)}</b><br>Taxa Extra: <b style="color:blue">R$ ${presidential.toFixed(2)}</b><br><hr><b>TOTAL FINAL COM TAXA: R$ ${totalComAcrescimo.toFixed(2)}</b><br><small>Maquineta s/ taxa reteria: R$ ${descontoMaquineta.toFixed(2)} (Líquido: R$ ${liquido.toFixed(2)})</small>`;
+    }
+
+    function sugerirRepasseTaxa() {
+        const deb = parseFloat(document.getElementById('pag-debito').value) || 0;
+        const cred = parseFloat(document.getElementById('pag-credito').value) || 0;
+        const valorCartaoBase = money(deb + cred);
+        let porc = (deb > 0 && cred === 0) ? 1.99 : 5.31;
+        let calculado = money(valorCartaoBase / (1 - (porc / 100))) - valorCartaoBase;
+        document.getElementById('taxa-personalizada-input').value = calculado.toFixed(2);
+        ajustarTaxaModal(calculado);
+    }
+
+    function confirmarVendaComTaxa() {
+        document.getElementById('modal-taxa').style.display = 'none';
+        finalizarVenda(taxaSelecionada);
+    }
+
+    function finalizarVenda(taxaAdicional) {
+        const d = parseFloat(document.getElementById('pag-dinheiro').value) || 0;
+        const p = parseFloat(document.getElementById('pag-pix').value) || 0;
+        const deb = parseFloat(document.getElementById('pag-debito').value) || 0;
+        const cred = parseFloat(document.getElementById('pag-credito').value) || 0;
+        
+        const sub = money(carrinho.reduce((a, b) => a + (b.venda * b.qtd), 0));
+        const desc = money(parseFloat(document.getElementById('desc-input').value) || 0);
+        let custoTotal = money(carrinho.reduce((a, b) => a + (b.custo * b.qtd), 0));
+        
+        const labelMetodo = [];
+        if(d>0) labelMetodo.push("DINHEIRO");
+        if(p>0) labelMetodo.push("PIX");
+        if(deb>0) labelMetodo.push("DÉBITO");
+        if(cred>0) labelMetodo.push("CRÉDITO");
+
+        const novaVendaRef = fbDatabase.ref("vendas").push();
+        const tHoje = new Date();
+
+        const venda = {
+            id: novaVendaRef.key,
+            data: tHoje.toLocaleDateString('pt-BR'),
+            hora: tHoje.toLocaleTimeString('pt-BR'),
+            dataObj: tHoje.toISOString().split('T')[0],
+            cliente: document.getElementById('nome-cliente').value.trim().toUpperCase() || "CONSUMIDOR PADRÃO",
+            itens: JSON.parse(JSON.stringify(carrinho)),
+            subtotal: sub,
+            desconto: desc,
+            taxa: money(taxaAdicional),
+            total: money((sub - desc) + taxaAdicional),
+            lucro: money(((sub - desc) + taxaAdicional) - custoTotal),
+            metodo: labelMetodo.join(" | "),
+            pagamentosDetalhados: { dinheiro: d, pix: p, debito: deb, credito: cred }
+        };
+
+        const updates = {};
+        venda.itens.forEach(item => {
+            const pObj = produtosCache.find(prod => prod.id === item.id);
+            if (pObj) {
+                pObj.estoque -= item.qtd;
+                updates[`/produtos/${pObj.id}`] = pObj;
+            }
+        });
+
+        updates[`/vendas/${novaVendaRef.key}`] = venda;
+
+        fbDatabase.ref().update(updates).then(() => {
+            if(confirm("Imprimir Nota Fiscal?")) imprimirCupom(venda);
+            if(confirm("Deseja enviar este cupom fiscal pelo WhatsApp?")) {
+                enviarWhatsAppVenda(venda);
+            }
+            carrinho = [];
+            document.getElementById('desc-input').value = 0;
+            document.getElementById('nome-cliente').value = "";
+            zerarCamposPagamento();
+            renderCarrinho();
+            calcularSaldoGeral();
+        }).catch(err => alert("Erro ao salvar: " + err.message));
+    }
+
+    function enviarWhatsAppVenda(v) {
+        let numCel = prompt("Digite o WhatsApp do cliente com DDD (Apenas números, ex: 86999998888):");
+        if(!numCel) return;
+        numCel = numCel.replace(/\D/g, '');
+        if(numCel.length < 10) { alert("Número inválido!"); return; }
+        
+        let txtNF = `🧾 *NOTA FISCAL*\n----------------------------------------\n*JC PESCADOS*\nCNPJ: 40.086.457/0001-85\nEndereço: Rua Alberto Leal Nunes, 1925\n----------------------------------------\nData: ${v.data} Hora: ${v.hora}\nCupom: #${v.id.substring(0,6)}\nCliente: ${v.cliente}\n----------------------------------------\n*ITENS COMPRADOS:*\n`;
+        v.itens.forEach(i => {
+            txtNF += `• ${i.nome} (${i.qtd.toFixed(3)} ${i.medida}) -> R$ ${money(i.venda*i.qtd).toFixed(2)}\n`;
+        });
+        txtNF += `----------------------------------------\n`;
+        if(v.desconto>0) txtNF += `Subtotal: R$ ${v.subtotal.toFixed(2)}\nDesconto: R$ ${v.desconto.toFixed(2)}\n`;
+        if(v.taxa>0) txtNF += `Taxa Adicional Maquineta: R$ ${v.taxa.toFixed(2)}\n`;
+        txtNF += `*TOTAL PAGO: R$ ${v.total.toFixed(2)}*\nMétodo: ${v.metodo}\n----------------------------------------\nAgradecemos a sua preferência!`;
+        
+        window.open(`https://api.whatsapp.com/send?phone=55${numCel}&text=${encodeURIComponent(txtNF)}`, '_blank');
+    }
+
+    function imprimirCupom(v) {
+        let c = `<div>----------------------------------------<br><b style="font-size:13px;">JC PESCADOS</b><br>CNPJ: 40.086.457/0001-85<br>Rua Alberto Leal Nunes, 1925<br>----------------------------------------<br><b>CUPOM:</b> #${v.id.substring(0,8)}<br><b>DATA:</b> ${v.data} <b>HORA:</b> ${v.hora}<br><b>CLIENTE:</b> ${v.cliente}<br>----------------------------------------<br><b>PRODUTOS DETALHADOS:</b><br>`;
+        v.itens.forEach(i => { c += `${i.nome}<br> &nbsp;&nbsp; ${i.qtd.toFixed(3)} ${i.medida} x R$ ${i.venda.toFixed(2)} = R$ ${money(i.venda*i.qtd).toFixed(2)}<br>`; });
+        c += `----------------------------------------<br>`;
+        if(v.desconto > 0) c += `SUBTOTAL BASE: R$ ${v.subtotal.toFixed(2)}<br>DESCONTO APLICADO: R$ ${v.desconto.toFixed(2)}<br>`;
+        if(v.taxa > 0) c += `TAXA EXTRA ADICIONAL: R$ ${v.taxa.toFixed(2)}<br>`;
+        c += `<b>TOTAL LIQUIDO PAGO: R$ ${v.total.toFixed(2)}</b><br>FORMA PAGTO: ${v.metodo}<br>----------------------------------------<br><center>Obrigado pela preferência!</center></div>`;
+        document.getElementById('print-area').innerHTML = c;
+        window.print();
+    }
+
+    function renderizarEstoque() {
+        if(nivelAcessoAtual === "FUNCIONARIO") return;
+        
+        const tbody = document.getElementById('tabela-estoque-corpo');
+        tbody.innerHTML = "";
+
+        produtosCache.forEach((p, index) => {
+            const tr = document.createElement('tr');
+            
+            // Campo Nome
+            const tdNome = document.createElement('td');
+            tdNome.style.padding = "10px";
+            tdNome.innerHTML = `<input type="text" class="input-estoque-tabela" id="edit-nome-${index}" value="${p.nome}">`;
+            tr.appendChild(tdNome);
+
+            // Seletor de Categorias dinâmico baseado no banco de dados para cada item
+            const tdCat = document.createElement('td');
+            let selectHtml = `<select class="input-estoque-tabela" id="edit-cat-${index}">`;
+            listaCategoriasUnicas.forEach(cat => {
+                selectHtml += `<option value="${cat}" ${p.categoria === cat ? "selected" : ""}>${cat}</option>`;
+            });
+            selectHtml += `</select>`;
+            tdCat.innerHTML = selectHtml;
+            tr.appendChild(tdCat);
+
+            // Medida, Estoque, Custo, Venda e Ações
+            tr.innerHTML += `
+                <td>
+                    <select class="input-estoque-tabela" id="edit-medida-${index}">
+                        <option value="UND" ${p.medida === "UND" ? "selected" : ""}>UND</option>
+                        <option value="KG" ${p.medida === "KG" ? "selected" : ""}>KG</option>
+                    </select>
+                </td>
+                <td><input type="number" step="0.001" class="input-estoque-tabela" id="edit-est-${index}" value="${p.estoque}"></td>
+                <td><input type="number" step="0.01" class="input-estoque-tabela" id="edit-custo-${index}" value="${p.custo}"></td>
+                <td><input type="number" step="0.01" class="input-estoque-tabela" id="edit-venda-${index}" value="${p.venda}"></td>
+                <td><button onclick="excluirProd('${p.id}')" style="background:var(--perigo); color:white; border:none; padding:5px 10px; border-radius:3px; cursor:pointer;">Remover</button></td>
+            `;
+
+            tbody.appendChild(tr);
+        });
+    }
+
+    function salvarConfig() { 
+        if(nivelAcessoAtual !== "MASTER") return alert("Acesso restrito.");
+        const pacotes = {};
+        
+        produtosCache.forEach((p, index) => {
+            const n = document.getElementById(`edit-nome-${index}`).value.toUpperCase().trim();
+            const c = document.getElementById(`edit-cat-${index}`).value.toUpperCase().trim();
+            const m = document.getElementById(`edit-medida-${index}`).value;
+            const e = parseFloat(document.getElementById(`edit-est-${index}`).value) || 0;
+            const custo = parseFloat(document.getElementById(`edit-custo-${index}`).value) || 0;
+            const venda = parseFloat(document.getElementById(`edit-venda-${index}`).value) || 0;
+            
+            if(n) {
+                pacotes[`/produtos/${p.id}`] = {
+                    nome: n,
+                    categoria: c || "GERAL",
+                    medida: m,
+                    estoque: e,
+                    custo: custo,
+                    venda: venda
+                };
+            }
+        });
+        
+        fbDatabase.ref().update(pacotes).then(() => { 
+            alert("Estoque e Categorias atualizadas e salvas na nuvem com sucesso!"); 
+        });
+    }
+
+    function cadastrarNovo() {
+        if(nivelAcessoAtual !== "MASTER") return alert("Acesso restrito.");
+        const n = document.getElementById('novo-nome').value.toUpperCase().trim(); 
+        
+        let c = "";
+        const selectCat = document.getElementById('nova-categoria-select').value;
+        if(selectCat === "__NOVA__") {
+            c = document.getElementById('nova-categoria-input-texto').value.toUpperCase().trim();
+        } else {
+            c = selectCat;
+        }
+
+        const m = document.getElementById('nova-medida').value; 
+        if(!n) return alert("Digite o nome do produto!");
+        if(!c) c = "GERAL";
+        
+        const novoRef = fbDatabase.ref("produtos").push();
+        const novo = { nome: n, categoria: c, medida: m, estoque: 0, custo: 0, venda: 0 };
+        
+        novoRef.set(novo).then(() => {
+            document.getElementById('novo-nome').value = ""; 
+            document.getElementById('nova-categoria-input-texto').value = "";
+            document.getElementById('nova-categoria-select').value = "GERAL";
+            verificarNovaCategoriaOpcao("GERAL");
+        });
+    }
+
+    function excluirProd(id) { 
+        if(nivelAcessoAtual !== "MASTER") return alert("Acesso restrito.");
+        if(confirm("Remover permanentemente este produto?")) {
+            fbDatabase.ref(`produtos/${id}`).remove().then(() => {
+                alert("Produto removido!");
+            });
+        }
+    }
+
+    function openTab(id, event) {
+        if((id === 'relatorio' || id === 'estoque' || id === 'reposicao') && nivelAcessoAtual === "FUNCIONARIO") {
+            alert("Acesso restrito apenas ao Gerente!");
+            return;
+        }
+        realizarMudancaAba(id, event);
+    }
+
+    function realizarMudancaAba(id, event) {
+        document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        if(event && event.currentTarget) event.currentTarget.classList.add('active');
+        else {
+            const btn = document.getElementById(`tab-${id}`);
+            if(btn) btn.classList.add('active');
+        }
+        if(id === 'relatorio') renderizarRelatorio();
+        if(id === 'estoque') renderizarEstoque();
+        if(id === 'reposicao') renderizarGestaoReposicao();
+        calcularSaldoGeral();
     }
 
     function verifyAlertasEstoque() {
-        const baixo = produtosCache.filter(p => p.estoque <= 5);
+        const baixo = produtosCache.filter(p => p.estoque <= 2);
         const badge = document.getElementById('badge-alerta');
-        if (badge) {
-            if (baixo.length > 0) { badge.style.display = 'block'; badge.innerText = baixo.length; }
-            else { badge.style.display = 'none'; }
+        if(badge){
+            if (baixo.length > 0) {
+                badge.style.display = 'block';
+                badge.innerText = baixo.length;
+            } else {
+                badge.style.display = 'none';
+            }
         }
     }
 
@@ -485,15 +963,13 @@
         if(nivelAcessoAtual === "FUNCIONARIO") return;
         const container = document.getElementById('lista-alertas-reposicao');
         if(!container) return;
-        
         const dInicio = document.getElementById('rep-data-inicio').value;
         const dFim = document.getElementById('rep-data-fim').value;
-        
+
         const data1 = new Date(dInicio + "T12:00:00");
         const data2 = new Date(dFim + "T12:00:00");
         const diferencaTempo = Math.abs(data2 - data1);
         const qtdDiasFiltrados = Math.ceil(diferencaTempo / (1000 * 60 * 60 * 24)) + 1;
-        
         document.getElementById('label-dias-filtrados').innerText = `(Soma proporcional de ${qtdDiasFiltrados} dia(s) filtrado(s))`;
 
         fbDatabase.ref("vendas").once("value", snapshot => {
@@ -510,25 +986,21 @@
                 vendaBruta += v.total;
                 lucroGeral += v.lucro;
                 v.itens.forEach(it => { custoGeral += (it.custo * it.qtd); });
-
                 if (v.pagamentosDetalhados) {
                     totDinheiro += v.pagamentosDetalhados.dinheiro || 0;
                     totPix += v.pagamentosDetalhados.pix || 0;
                     totDebito += v.pagamentosDetalhados.debito || 0;
                     totCredito += v.pagamentosDetalhados.credito || 0;
-                } else {
-                    if (v.metodo === "DINHEIRO") totDinheiro += v.total;
-                    else if (v.metodo === "PIX") totPix += v.total;
-                    else if (v.metodo === "DÉBITO") totDebito += v.total;
-                    else if (v.metodo && v.metodo.includes("CRÉDITO")) totCredito += v.total;
                 }
             });
 
-            const cAluguelDia = (custosMensaisCache.aluguel || 0) / 30;
-            const cFuncDia = (custosMensaisCache.funcionaria || 0) / 30;
-            const cAguaDia = (custosMensaisCache.agua || 0) / 30;
-            const cLuzDia = (custosMensaisCache.luz || 0) / 30;
-            const custoFixoTotalPorDia = cAluguelDia + cFuncDia + cAguaDia + cLuzDia;
+            document.getElementById('fin-custo-total').innerText = "R$ " + custoGeral.toFixed(2);
+            document.getElementById('fin-lucro-total').innerText = "R$ " + lucroGeral.toFixed(2);
+
+            const cAluguelDia = custosMensaisCache.aluguel / 30;
+            const cFuncDia = custosMensaisCache.funcionaria / 30;
+            const cAguaDia = custosMensaisCache.agua / 30;
+            const cLuzDia = custosMensaisCache.luz / 30;
 
             const cAluguelPeriodo = cAluguelDia * qtdDiasFiltrados;
             const cFuncPeriodo = cFuncDia * qtdDiasFiltrados;
@@ -542,7 +1014,6 @@
 
             let totOutrosCustos = 0;
             let bloquinhoHtml = "";
-
             bloquinhoHtml += `<div class="item-bloquinho"><span>🏠 ALUGUEL (${qtdDiasFiltrados}d × R$ ${cAluguelDia.toFixed(2)}):</span><b>R$ ${cAluguelPeriodo.toFixed(2)}</b></div>`;
             bloquinhoHtml += `<div class="item-bloquinho"><span>👤 FUNCIONÁRIA (${qtdDiasFiltrados}d × R$ ${cFuncDia.toFixed(2)}):</span><b>R$ ${cFuncPeriodo.toFixed(2)}</b></div>`;
             bloquinhoHtml += `<div class="item-bloquinho"><span>💧 CONTA DE ÁGUA (${qtdDiasFiltrados}d × R$ ${cAguaDia.toFixed(2)}):</span><b>R$ ${cAguaPeriodo.toFixed(2)}</b></div>`;
@@ -563,125 +1034,31 @@
             const totalCustosTudo = cAluguelPeriodo + cFuncPeriodo + cAguaPeriodo + cLuzPeriodo + totOutrosCustos;
             const lucroLiquidoRealFinal = lucroGeral - totalCustosTudo;
 
+            document.getElementById('fin-custos-fixos-total').innerText = "R$ " + totalCustosTudo.toFixed(2);
             document.getElementById('bloquinho-corpo').innerHTML = bloquinhoHtml;
 
-            const margemMediaLucro = vendaBruta > 0 ? (lucroGeral / vendaBruta) : 0.40; 
-            const faturamentoMetaDiario = margemMediaLucro > 0 ? (custoFixoTotalPorDia / margemMediaLucro) : 0;
+            const displayLiquidoReal = document.getElementById('fin-lucro-liquido-real');
+            displayLiquidoReal.innerText = "R$ " + lucroLiquidoRealFinal.toFixed(2);
+            displayLiquidoReal.style.color = lucroLiquidoRealFinal >= 0 ? '#00ff88' : 'red';
 
-            document.getElementById('painel-metas-diarias').innerHTML = `
-                <b>🎯 O QUE FAZER POR DIA PARA PAGAR AS CONTAS E TER LUCRO:</b><br>
-                • Custo fixo real diário da sua estrutura: <b style="color:red;">R$ ${custoFixoTotalPorDia.toFixed(2)} por dia</b>.<br>
-                • Baseado na sua margem de lucro atual, você precisa faturar no caixa no mínimo de <b>R$ ${faturamentoMetaDiario.toFixed(2)} por dia</b> apenas para cobrir os custos operacionais.<br>
-                • Tudo o que você vender <u>acima</u> desse valor diário passa a construir o seu <b>Lucro Líquido Real</b> livre.
-            `;
+            let tMetaDia = (cAluguelDia + cFuncDia + cAguaDia + cLuzDia) * 3.5;
+            let faltamVenderDiario = (tMetaDia * qtdDiasFiltrados) - vendaBruta;
+            
+            document.getElementById('painel-metas-diarias').innerHTML = `<b>Direcionamento Estratégico (Metas Base Mínima):</b><br>• Faturamento Ideal Diário Calculado: <b>R$ ${tMetaDia.toFixed(2)}</b> (Cobre fornecedores, custos fixos e gera retirada livre)<br>• Faturamento Ideal Esperado no Intervalo (${qtdDiasFiltrados} dia(s)): <b>R$ ${(tMetaDia * qtdDiasFiltrados).toFixed(2)}</b><br>• Vendas Atuais Realizadas no Intervalo: <b>R$ ${vendaBruta.toFixed(2)}</b><br>${faltamVenderDiario > 0 ? `• Falta Vender neste período para atingir a meta limpa: <b style="color:#c62828;">R$ ${faltamVenderDiario.toFixed(2)}</b>` : `<b style="color:#2e7d32;">🎉 META ATINGIDA E SUPERADA NO PERÍODO!</b>`}`;
 
-            document.getElementById('fin-total-dinheiro').innerText = `R$ ${money(totDinheiro).toFixed(2)}`;
-            document.getElementById('fin-total-pix').innerText = `R$ ${money(totPix).toFixed(2)}`;
-            document.getElementById('fin-total-debito').innerText = `R$ ${money(totDebito).toFixed(2)}`;
-            document.getElementById('fin-total-credito').innerText = `R$ ${money(totCredito).toFixed(2)}`;
-
-            document.getElementById('fin-custos-fixos-total').innerText = `R$ ${totalCustosTudo.toFixed(2)}`;
-            document.getElementById('fin-lucro-liquido-real').innerText = `R$ ${lucroLiquidoRealFinal.toFixed(2)}`;
-
-            let tabelaDetalhada = `
-                <div id="relatorio-reposicao-print">
-                    <h2 style="text-align:center; color:black; margin-bottom:5px;"><b>📊 RELATÓRIO DE LUCRO LÍQUIDO REAL</b></h2>
-                    <p style="text-align:center; margin:0; font-family:monospace; font-size:11px;">JC PESCADOS - IMPRESSÃO DE PERFORMANCE</p>
-                    <hr style="border-top:1px dashed black;">
-                    <div style="color:black; font-family:monospace; font-size:11px; line-height:1.4;">
-                        <b>PERÍODO:</b> ${dInicio.split('-').reverse().join('/')} até ${dFim.split('-').reverse().join('/')} (${qtdDiasFiltrados} dias)<br>
-                        <b>CUSTO OPERACIONAL/DIA:</b> R$ ${custoFixoTotalPorDia.toFixed(2)}<br>
-                        ----------------------------------------<br>
-                        <b>ENTRADAS BRUTAS POR MEIO:</b><br>
-                        DINHEIRO: R$ ${money(totDinheiro).toFixed(2)} | PIX: R$ ${money(totPix).toFixed(2)}<br>
-                        DÉBITO:   R$ ${money(totDebito).toFixed(2)} | CRÉDITO: R$ ${money(totCredito).toFixed(2)}
-                    </div>
-                    <table style="width:100%; border-collapse: collapse; margin-top:15px; color:black; font-family: monospace; font-size:11px;">
-                        <thead>
-                            <tr style="border-bottom: 2px solid black;">
-                                <th style="text-align:left;"><b>ITEM</b></th>
-                                <th style="text-align:center;"><b>QTD</b></th>
-                                <th style="text-align:center;"><b>FORNEC.</b></th>
-                                <th style="text-align:center;"><b>LUCRO B.</b></th>
-                            </tr>
-                        </thead>
-                        <tbody>`;
-
+            let tabelaDetalhada = "";
             produtosCache.forEach(p => {
-                const qtdV = vendasPeriodo.reduce((acc, v) => acc + v.itens.filter(i => i.nome === p.nome).reduce((s, it) => s + it.qtd, 0), 0);
-                if(qtdV > 0) {
-                    const cForn = money(qtdV * p.custo);
-                    const lBrutoItem = money(vendasPeriodo.reduce((acc, v) => acc + v.itens.filter(i => i.nome === p.nome).reduce((s, it) => s + ((it.venda * it.qtd) - (it.custo * it.qtd)), 0), 0));
-                    tabelaDetalhada += `
-                        <tr style="border-bottom: 1px solid #ddd;">
-                            <td style="padding:4px 0;"><b>${p.nome}</b></td>
-                            <td style="text-align:center;"><b>${qtdV.toFixed(3)}</b></td>
-                            <td style="text-align:center;"><b>R$ ${cForn.toFixed(2)}</b></td>
-                            <td style="text-align:center;"><b>R$ ${lBrutoItem.toFixed(2)}</b></td>
-                        </tr>`;
-
-                    const corBorda = p.estoque <= 2 ? 'red' : (p.estoque <= 5 ? 'orange' : '#28a745');
-                    htmlCards += `
-                        <div class="card-reposicao" style="border-left-color: ${corBorda}">
-                            <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <div><h3 style="margin:0">${p.nome}</h3><small>${p.categoria} | ${p.medida}</small></div>
-                                <div style="text-align:right"><span style="font-weight:bold; color:${p.estoque <= 5 ? 'red' : 'green'}">ESTOQUE: ${p.estoque.toFixed(3)}</span></div>
-                            </div>
-                        </div>`;
-                }
-            });
-
-            const totalVendasRapidasValor = vendasPeriodo.reduce((acc, v) => acc + v.itens.filter(i => i.nome === "VENDA RAPIDA VALOR").reduce((s, it) => s + (it.venda * it.qtd), 0), 0);
-            if(totalVendasRapidasValor > 0) {
-                const custoRapido = money(totalVendasRapidasValor * 0.5);
-                const lucroRapido = money(totalVendasRapidasValor - custoRapido);
-                tabelaDetalhada += `
-                    <tr style="border-bottom: 1px solid #ddd;">
-                        <td style="padding:4px 0;"><b>VENDA RAPIDA VALOR</b></td>
-                        <td style="text-align:center;"><b>-</b></td>
-                        <td style="text-align:center;"><b>R$ ${custoRapido.toFixed(2)}</b></td>
-                        <td style="text-align:center;"><b>R$ ${lucroRapido.toFixed(2)}</b></td>
-                    </tr>`;
-            }
-
-            tabelaDetalhada += `
-                        </tbody>
-                    </table>
-                    <hr style="border-top:1px dashed black; margin-top:15px;">
-                    <div style="font-family:monospace; font-size:11px; text-align:right; line-height:1.5;">
-                        <b>LUCRO BRUTO DAS VENDAS: R$ ${lucroGeral.toFixed(2)}</b><br>
-                        <span style="color:red;">(-) CONTAS OPERACIONAIS (${qtdDiasFiltrados} dias): R$ ${totalCustosTudo.toFixed(2)}</span><br>
-                        <b style="font-size:12px; color:green;">(=) LUCRO LÍQUIDO REAL SEU: R$ ${lucroLiquidoRealFinal.toFixed(2)}</b>
+                const qtdV = vendasPeriodo.reduce((acc, v) => acc + v.itens.filter(i => i.id === p.id).reduce((s, it) => s + it.qtd, 0), 0);
+                const corBorda = p.estoque <= 2 ? 'red' : (p.estoque <= 5 ? 'orange' : '#28a745');
+                htmlCards += `<div class="card-reposicao" style="border-left-color: ${corBorda}">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div><h3 style="margin:0">${p.nome}</h3><small>${p.categoria} | ${p.medida}</small></div>
+                        <div style="text-align:right"><span style="font-weight:bold; color:${p.estoque <= 5 ? 'red' : 'green'}">ESTOQUE: ${p.estoque.toFixed(3)}</span></div>
                     </div>
-                </div>
-                <button onclick="imprimirRelatorioReposicao()" style="margin-top:10px; background:var(--info); color:white; border:none; padding:12px; border-radius:5px; width:100%; font-weight:bold; cursor:pointer;">🖨️ IMPRIMIR COMPROVANTE DE LUCRO REAL</button>
-                <hr style="margin:25px 0;">
-            `;
-
-            document.getElementById('fin-custo-total').innerText = `R$ ${custoGeral.toFixed(2)}`;
-            document.getElementById('fin-lucro-total').innerText = `R$ ${lucroGeral.toFixed(2)}`;
-            document.getElementById('fin-vendas-brutas').innerText = `R$ ${vendaBruta.toFixed(2)}`;
-            container.innerHTML = tabelaDetalhada + (htmlCards || "<p style='text-align:center; color:gray;'>Nenhuma venda encontrada no período selecionado.</p>");
-        });
-    }
-
-    function imprimirRelatorioReposicao() {
-        const conteudo = document.getElementById('relatorio-reposicao-print').innerHTML;
-        document.getElementById('print-area').innerHTML = `<div style="width:80mm; font-family:monospace; font-size:10px; color:black;">${conteudo}</div>`;
-        window.print();
-    }
-
-    function limparHistoricoGeral() {
-        if(nivelAcessoAtual !== "MASTER") return alert("Ação não autorizada.");
-        if(confirm("Deseja apagar TODO o histórico de vendas e gastos da nuvem? O estoque permanecerá igual.")) {
-            fbDatabase.ref("vendas").remove();
-            fbDatabase.ref("gastos").remove().then(() => {
-                alert("Histórico limpo com sucesso!");
-                renderizarGestaoReposicao();
-                renderizarRelatorio();
-                calcularSaldoGeral();
+                </div>`;
             });
-        }
+            container.innerHTML = htmlCards;
+        });
     }
 
     function fluxoCaixa() {
@@ -692,7 +1069,6 @@
                 v = prompt("Informe o Saldo de Abertura:", "0.00");
                 if (v === null) return;
             }
-            
             valorAbertura = money(parseFloat(v.replace(',', '.')) || 0);
             lojaAberta = true;
             btn.innerText = "FECHAR CAIXA";
@@ -729,309 +1105,78 @@
         fbDatabase.ref("vendas").once("value", snapVendas => {
             const todasVendas = snapVendas.val() ? Object.values(snapVendas.val()) : [];
             const vds = todasVendas.filter(v => v.data === hoje);
-
+            
             fbDatabase.ref("gastos").once("value", snapGastos => {
                 const todosGastos = snapGastos.val() ? Object.values(snapGastos.val()) : [];
                 const gst = todosGastos.filter(g => g.data === hoje);
 
                 const tVendas = money(vds.reduce((a, b) => a + (b.total || 0), 0));
                 const tGastos = money(gst.reduce((a, b) => a + (b.valor || 0), 0));
+
                 document.getElementById('saldo-caixa-display').innerText = `R$ ${(money(valorAbertura + tVendas - tGastos)).toFixed(2)}`;
             });
         });
     }
 
-    function renderizarPDV() {
-        const container = document.getElementById('pdv-categorias-dinamicas');
-        container.innerHTML = "";
-        
-        // Coleta as categorias corrigidas e válidas
-        const cats = [...new Set(produtosCache.map(p => p.categoria))];
-        cats.forEach(cat => {
-            const div = document.createElement('div'); div.className = 'coluna-cat'; div.innerHTML = `<h4>${cat}</h4>`;
-            produtosCache.filter(p => p.categoria === cat).forEach(p => {
-                const btnId = `btn-pdv-${p.nome.replace(/\s+/g, '_')}`;
-                div.innerHTML += `<div class="card-prod" id="${btnId}" style="border-color: ${p.estoque <= 5 ? 'red' : 'var(--azul)'}">${p.nome}<br><small>R$ ${p.venda.toFixed(2)} / ${p.medida}</small><span class="estoque-badge" style="color: ${p.estoque <= 5 ? 'red' : 'var(--info)'}">📦 ${p.estoque.toFixed(3)}</span></div>`;
-            });
-            container.appendChild(div);
+    function lancarGasto() {
+        const desc = document.getElementById('gasto-desc').value.trim();
+        const valor = parseFloat(document.getElementById('gasto-valor').value) || 0;
+        if (!desc || valor <= 0) return alert("Preencha corretamente.");
 
-            produtosCache.filter(p => p.categoria === cat).forEach(p => {
-                const btnId = `btn-pdv-${p.nome.replace(/\s+/g, '_')}`;
-                document.getElementById(btnId).onclick = () => abrirModalQtd(p.nome);
-            });
-        });
-    }
-
-    function abrirModalQtd(nome) {
-        if(!lojaAberta) return;
-        itemAtual = produtosCache.find(p => p.nome === nome);
-        document.getElementById('modal-nome-prod').innerText = itemAtual.nome;
-        document.getElementById('label-tipo-medida').innerText = "Qtd em " + itemAtual.medida + ":";
-        document.getElementById('estoque-atual-aviso').innerText = "Estoque Disponível: " + itemAtual.estoque.toFixed(3);
-        document.getElementById('modal-selecao').style.display = 'flex';
-        setTimeout(() => document.getElementById('input-qtd-modal').focus(), 100);
-    }
-    
-    function fecharModal() { document.getElementById('modal-selecao').style.display = 'none'; document.getElementById('input-qtd-modal').value = ""; }
-    
-    function confirmarAdicao() {
-        const qtd = parseFloat(document.getElementById('input-qtd-modal').value);
-        if (qtd > 0) { 
-            if (qtd > itemAtual.estoque) { alert("ERRO: Estoque insuficiente!"); return; } 
-            carrinho.push({ ...itemAtual, qtd }); 
-            renderCarrinho(); 
-            fecharModal(); 
-        }
-    }
-    
-    function renderCarrinho() {
-        const lista = document.getElementById('lista-carrinho');
-        lista.innerHTML = carrinho.map((item, i) => `<div style="display:flex; justify-content:space-between; padding:8px; border-bottom:1px solid #eee;"><span><b>${item.qtd.toFixed(3)}</b> ${item.nome}</span><span>R$ ${money(item.venda * item.qtd).toFixed(2)} <button onclick="removerDoCarrinho(${i})" style="color:red; border:none; background:none; cursor:pointer;">[X]</button></span></div>`).join('');
-        calcularTotal();
-    }
-
-    window.removerDoCarrinho = function(i) {
-        carrinho.splice(i, 1);
-        renderCarrinho();
-    }
-    
-    function calcularTotal() {
-        const sub = money(carrinho.reduce((a, b) => a + (b.venda * b.qtd), 0));
-        const desc = money(parseFloat(document.getElementById('desc-input').value) || 0);
-        document.getElementById('total-display').innerText = "R$ " + money(sub - desc).toFixed(2);
-        atualizarRestantePagamento();
-    }
-
-    function obtenerSomaDosPagamentos() {
-        const d = parseFloat(document.getElementById('pag-dinheiro').value) || 0;
-        const p = parseFloat(document.getElementById('pag-pix').value) || 0;
-        const deb = parseFloat(document.getElementById('pag-debito').value) || 0;
-        const cred = parseFloat(document.getElementById('pag-credito').value) || 0;
-        return money(d + p + deb + cred);
-    }
-
-    function atualizarRestantePagamento() {
-        const totalVenda = money(parseFloat(document.getElementById('total-display').innerText.replace("R$ ", "")));
-        const preenchido = obtenerSomaDosPagamentos();
-        const dif = money(totalVenda - preenchido);
-        const display = document.getElementById('restante-pagamento-display');
-        
-        if(totalVenda === 0) { display.innerText = "Carrinho vazio"; display.style.color = "gray"; } 
-        else if (dif > 0) { display.innerText = `Falta preencher: R$ ${dif.toFixed(2)}`; display.style.color = "var(--perigo)"; } 
-        else if (dif < 0) { display.innerText = `Excesso / Troco: R$ ${Math.abs(dif).toFixed(2)}`; display.style.color = "var(--alerta)"; } 
-        else { display.innerText = "Valor total preenchido corretamente!"; display.style.color = "var(--sucesso)"; }
-    }
-
-    function zerarCamposPagamento() {
-        document.getElementById('pag-dinheiro').value = 0;
-        document.getElementById('pag-pix').value = 0;
-        document.getElementById('pag-debito').value = 0;
-        document.getElementById('pag-credito').value = 0;
-        document.getElementById('restante-pagamento-display').innerText = "Falta preencher o valor total";
-    }
-
-    function sugerirRepasseTaxa() {
-        const deb = parseFloat(document.getElementById('pag-debito').value) || 0;
-        const cred = parseFloat(document.getElementById('pag-credito').value) || 0;
-        let valorParaMaquineta = deb + cred;
-        if(valorParaMaquineta <= 0) { alert("Preencha um valor em Débito ou Crédito para calcular o repasse!"); return; }
-
-        let porcMaquineta = (deb > 0 && cred === 0) ? 1.99 : 5.31;
-        let valorTotalNecessario = valorParaMaquineta / (1 - (porcMaquineta / 100));
-        let taxaParaAdicionar = money(valorTotalNecessario - valorParaMaquineta);
-        
-        document.getElementById('taxa-personalizada-input').value = taxaParaAdicionar.toFixed(2);
-        ajustarTaxaModal(taxaParaAdicionar);
-    }
-
-    function verificarPagamento() {
-        if (carrinho.length === 0) return;
-        const totalVenda = money(parseFloat(document.getElementById('total-display').innerText.replace("R$ ", "")));
-        const preenchido = obtenerSomaDosPagamentos();
-        
-        if (preenchido < totalVenda) {
-            alert(`Erro: O valor informado é menor que o total da venda. Falta: R$ ${(totalVenda - preenchido).toFixed(2)}`);
-            return;
-        }
-        
-        const deb = parseFloat(document.getElementById('pag-debito').value) || 0;
-        const cred = parseFloat(document.getElementById('pag-credito').value) || 0;
-        
-        if (deb > 0 || cred > 0) {
-            taxaSelecionada = 0; document.getElementById('taxa-personalizada-input').value = 0;
-            const select = document.getElementById('select-qtd-parcelas'); select.innerHTML = "";
-            const maxParcelas = (cred > 0) ? 12 : 1;
-            for(let i=1; i<=maxParcelas; i++) { let opt = document.createElement('option'); opt.value = i; opt.text = i + "x Parcela(s)"; select.appendChild(opt); }
-            ajustarTaxaModal(0); document.getElementById('modal-taxa').style.display = 'flex';
-        } else { 
-            finalizarVenda(0); 
-        }
-    }
-
-    function adicionarTaxaFixa(valor) {
-        let abrirCampos = parseFloat(document.getElementById('taxa-personalizada-input').value) || 0;
-        document.getElementById('taxa-personalizada-input').value = (abrirCampos + valor).toFixed(2);
-        ajustarTaxaModal(document.getElementById('taxa-personalizada-input').value);
-    }
-
-    function ajustarTaxaModal(valorAdicional) {
-        const d = parseFloat(document.getElementById('pag-dinheiro').value) || 0;
-        const p = parseFloat(document.getElementById('pag-pix').value) || 0;
-        const deb = parseFloat(document.getElementById('pag-debito').value) || 0;
-        const cred = parseFloat(document.getElementById('pag-credito').value) || 0;
-        
-        const totalVendaBase = money(d + p + deb + cred);
-        const valorCartaoBase = money(deb + cred);
-        
-        let porcMaquineta = (deb > 0 && cred === 0) ? 1.99 : 5.31;
-        let presidential = money(parseFloat(valorAdicional) || 0);
-        taxaSelecionada = presidential;
-        
-        const totalComAcrescimo = money(totalVendaBase + presidential);
-        const descontoMaquineta = money((valorCartaoBase + presidential) * (porcMaquineta / 100));
-        const liquido = money(totalComAcrescimo - descontoMaquineta);
-        
-        document.getElementById('info-recebimento-detalhado').innerHTML = `Venda Base Total: <b>R$ ${totalVendaBase.toFixed(2)}</b><br>Taxa Extra: <b style="color:blue">R$ ${presidential.toFixed(2)}</b><br><hr><b>TOTAL FINAL COM TAXA: R$ ${totalComAcrescimo.toFixed(2)}</b><br><small>Maquineta s/ Cartão (${porcMaquineta}%): - R$ ${descontoMaquineta.toFixed(2)}</small><br><b>LÍQUIDO TOTAL ESPERADO: R$ ${liquido.toFixed(2)}</b>`;
-        document.getElementById('painel-parcelas').style.display = (cred > 0) ? "block" : "none";
-    }
-
-    function confirmarVendaComTaxa() { finalizarVenda(taxaSelecionada); }
-
-    function finalizarVenda(taxaAdicional) {
-        document.getElementById('modal-taxa').style.display = 'none';
-        const sub = money(carrinho.reduce((a, b) => a + (b.venda * b.qtd), 0));
-        const custoTotal = money(carrinho.reduce((a, b) => a + (b.custo * b.qtd), 0));
-        const desc = money(parseFloat(document.getElementById('desc-input').value) || 0);
-        const hoje = new Date();
-        
-        let d = parseFloat(document.getElementById('pag-dinheiro').value) || 0;
-        let p = parseFloat(document.getElementById('pag-pix').value) || 0;
-        let deb = parseFloat(document.getElementById('pag-debito').value) || 0;
-        let cred = parseFloat(document.getElementById('pag-credito').value) || 0;
-        
-        if (taxaAdicional > 0) {
-            if (cred > 0) cred = money(cred + taxaAdicional);
-            else if (deb > 0) deb = money(deb + taxaAdicional);
-            else d = money(d + taxaAdicional);
-        }
-
-        let labelMetodo = [];
-        if (d > 0) labelMetodo.push(`DINHEIRO: R$${d.toFixed(2)}`);
-        if (p > 0) labelMetodo.push(`PIX: R$${p.toFixed(2)}`);
-        if (deb > 0) labelMetodo.push(`DÉBITO: R$${deb.toFixed(2)}`);
-        if (cred > 0) {
-            const parcelas = document.getElementById('select-qtd-parcelas').value || 1;
-            labelMetodo.push(`CRÉDITO ${parcelas}X: R$${cred.toFixed(2)}`);
-        }
-        
-        const novaVendaRef = fbDatabase.ref('vendas').push();
-        
-        const venda = {
-            id: novaVendaRef.key,
-            cliente: document.getElementById('nome-cliente').value.toUpperCase() || "CONSUMIDOR",
-            data: hoje.toLocaleDateString('pt-BR'),
-            dataObj: hoje.toISOString().split('T')[0],
-            hora: hoje.toLocaleTimeString('pt-BR'),
-            itens: JSON.parse(JSON.stringify(carrinho)),
-            subtotal: sub, desconto: desc, taxa: money(taxaAdicional),
-            total: money((sub - desc) + taxaAdicional),
-            lucro: money(((sub - desc) + taxaAdicional) - custoTotal),
-            metodo: labelMetodo.join(" | "),
-            pagamentosDetalhados: { dinheiro: d, pix: p, debito: deb, credito: cred }
+        const nRef = fbDatabase.ref("gastos").push();
+        const d = new Date();
+        const g = {
+            id: nRef.key,
+            desc: desc.toUpperCase(),
+            valor: valor,
+            data: d.toLocaleDateString('pt-BR'),
+            hora: d.toLocaleTimeString('pt-BR'),
+            dataObj: d.toISOString().split('T')[0]
         };
-
-        const updates = {};
-        venda.itens.forEach(item => { 
-            const pObj = produtosCache.find(prod => prod.idAnterior || prod.nome === item.nome); 
-            if (pObj) { 
-                pObj.estoque -= item.qtd; 
-                updates[`/produtos/${pObj.idAnterior || pObj.nome}`] = pObj;
-            } 
-        });
-        updates[`/vendas/${novaVendaRef.key}`] = venda;
-
-        fbDatabase.ref().update(updates).then(() => {
-            if(confirm("Imprimir Nota Fiscal?")) imprimirCupom(venda);
-            if(confirm("Deseja enviar este cupom fiscal pelo WhatsApp?")) enviarWhatsAppVenda(venda);
-
-            carrinho = []; 
-            document.getElementById('desc-input').value = 0; 
-            document.getElementById('nome-cliente').value = "";
-            zerarCamposPagamento();
-            renderCarrinho(); 
+        nRef.set(g).then(() => {
+            document.getElementById('gasto-desc').value = "";
+            document.getElementById('gasto-valor').value = "";
+            alert("Gasto lançado.");
+            renderizarRelatorio();
             calcularSaldoGeral();
-        }).catch(err => alert("Erro ao salvar: " + err.message));
+        });
     }
 
-    function enviarWhatsAppVenda(v) {
-        let numCel = prompt("Digite o WhatsApp do cliente com DDD (Apenas números, ex: 86999998888):");
-        if(!numCel) return;
-        
-        numCel = numCel.replace(/\D/g, '');
-        if(numCel.length < 10) { alert("Número inválido!"); return; }
-
-        let txtNF = `🧾 *NOTA FISCAL*\n`;
-        txtNF += `----------------------------------------\n`;
-        txtNF += `🏢 *JC PESCADOS*\n`;
-        txtNF += `🆔 CNPJ: 40.086.457/0001-85\n`;
-        txtNF += `📍 Endereço: Rua Alberto Leal Nunes, 1925\n`;
-        txtNF += `----------------------------------------\n`;
-        txtNF += `📅 Data: ${v.data}   🕒 Hora: ${v.hora}\n`;
-        txtNF += `🔢 Cupom: #${v.id.substring(0,6)}\n`;
-        txtNF += `👤 Cliente: ${v.cliente}\n`;
-        txtNF += `----------------------------------------\n`;
-        txtNF += `*ITENS COMPRADOS:*\n`;
-        
-        v.itens.forEach(i => {
-            txtNF += `• ${i.nome} (${i.qtd.toFixed(3)} ${i.medida}) -> R$ ${money(i.venda*i.qtd).toFixed(2)}\n`;
-        });
-        
-        txtNF += `----------------------------------------\n`;
-        txtNF += `💰 *Subtotal:* R$ ${v.subtotal.toFixed(2)}\n`;
-        if(v.desconto > 0) txtNF += `📉 *Desconto:* R$ ${v.desconto.toFixed(2)}\n`;
-        if(v.taxa > 0) txtNF += `💳 *Acréscimo Taxa:* R$ ${v.taxa.toFixed(2)}\n`;
-        txtNF += `⭐ *TOTAL PAGO:* R$ ${v.total.toFixed(2)}\n`;
-        txtNF += `----------------------------------------\n`;
-        txtNF += `💳 *Forma de Pagamento:*\n${v.metodo.split(" | ").join("\n")}\n`;
-        txtNF += `----------------------------------------\n`;
-        txtNF += `🙏 Obrigado pela preferência e volte sempre!`;
-
-        const urlEncoded = encodeURIComponent(txtNF);
-        const win = window.open(`https://api.whatsapp.com/send?phone=55${numCel}&text=${urlEncoded}`, '_blank');
-        if (win) win.focus();
+    function excluirGasto(id) {
+        if(nivelAcessoAtual !== "MASTER") return alert("Restrito!");
+        if(confirm("Remover este gasto do caixa?")) {
+            fbDatabase.ref(`gastos/${id}`).remove().then(() => {
+                renderizarRelatorio();
+                calcularSaldoGeral();
+            });
+        }
     }
 
     function renderizarRelatorio() {
-        let dInicio = document.getElementById('filtro-data-inicio').value;
-        let dFim = document.getElementById('filtro-data-fim').value;
-        const hojeData = new Date().toISOString().split('T')[0];
-
-        if (nivelAcessoAtual === "FUNCIONARIO") {
-            dInicio = hojeData;
-            dFim = hojeData;
-            document.getElementById('filtro-data-inicio').value = hojeData;
-            document.getElementById('filtro-data-fim').value = hojeData;
-        }
-
-        const dataH = new Date();
-        const mesAtual = (dataH.getMonth() + 1).toString().padStart(2, '0');
-        const anoAtual = dataH.getFullYear().toString();
-
+        const dInicio = document.getElementById('filtro-data-inicio').value;
+        const dFim = document.getElementById('filtro-data-fim').value;
+        
         fbDatabase.ref("vendas").once("value", snapVendas => {
             const todasVendas = snapVendas.val() ? Object.values(snapVendas.val()) : [];
-            const vds = todasVendas.filter(v => { const dataV = v.dataObj || v.data.split('/').reverse().join('-'); return dataV >= dInicio && dataV <= dFim; });
-            
+            const vds = todasVendas.filter(v => {
+                const dv = v.dataObj || v.data.split('/').reverse().join('-');
+                return dv >= dInicio && dv <= dFim;
+            });
+
             fbDatabase.ref("gastos").once("value", snapGastos => {
                 const todosGastos = snapGastos.val() ? Object.values(snapGastos.val()) : [];
-                const gst = todosGastos.filter(g => { const dataG = g.dataObj || g.data.split('/').reverse().join('-'); return dataG >= dInicio && dataG <= dFim; });
-                
+                const gst = todosGastos.filter(g => {
+                    const dg = g.dataObj || g.data.split('/').reverse().join('-');
+                    return dg >= dInicio && dg <= dFim;
+                });
+
                 const brutoProdutos = money(vds.reduce((a,b)=>a+(b.subtotal || 0), 0));
                 const totDescontos = money(vds.reduce((a,b)=>a+(b.desconto || 0), 0));
                 const totTaxas = money(vds.reduce((a,b)=>a+(b.taxa || 0), 0));
                 const totVendasLiquido = money(vds.reduce((a,b)=>a+(b.total || 0), 0));
                 const totGastos = money(gst.reduce((a, b) => a + (b.valor || 0), 0));
                 const totLucro = money(vds.reduce((a,b)=>a+(b.lucro || 0), 0));
-                
+
                 let abrirCampos = 0, vPix = 0, vDebito = 0, vCredito = 0;
                 vds.forEach(v => {
                     if(v.pagamentosDetalhados){
@@ -1039,42 +1184,30 @@
                         vPix += v.pagamentosDetalhados.pix || 0;
                         vDebito += v.pagamentosDetalhados.debito || 0;
                         vCredito += v.pagamentosDetalhados.credito || 0;
-                    } else {
-                        if (v.metodo === "DINHEIRO") abrirCampos += v.total;
-                        else if (v.metodo === "PIX") vPix += v.total;
-                        else if (v.metodo === "DÉBITO") vDebito += v.total;
-                        else if (v.metodo && v.metodo.includes("CRÉDITO")) vCredito += v.total;
                     }
                 });
 
-                let prodSoma = {}; 
-                vds.forEach(v => { v.itens.forEach(it => { if(!prodSoma[it.nome]) prodSoma[it.nome] = { qtd: 0, SelfMedida: it.medida || "UN" }; prodSoma[it.nome].qtd += it.qtd; }); });
-                let prodListaTxt = Object.keys(prodSoma).map(nome => `${nome.padEnd(20)}: ${prodSoma[nome].qtd.toFixed(3)} ${prodSoma[nome].SelfMedida}`).join('\n');
-                
-                if(nivelAcessoAtual === "MASTER") {
-                    document.getElementById('resumo-html-v8').innerHTML = `RESUMO DO PERÍODO:\nBRUTO PRODUTOS: R$ ${brutoProdutos.toFixed(2)}\n(-) DESCONTOS: R$ ${totDescontos.toFixed(2)}\n(+) TAXAS: R$ ${totTaxas.toFixed(2)}\n(=) LÍQUIDO: R$ ${totVendasLiquido.toFixed(2)}\n(💰) LUCRO: R$ ${totLucro.toFixed(2)}\n(-) GASTOS: R$ ${totGastos.toFixed(2)}\n----------------------\nDIVISÃO DE ENTRADAS:\nDINHEIRO: R$ ${money(abrirCampos).toFixed(2)}\nPIX:      R$ ${money(vPix).toFixed(2)}\nDÉBITO:   R$ ${money(vDebito).toFixed(2)}\nCRÉDITO:  R$ ${money(vCredito).toFixed(2)}\n----------------------\nDIGITAÇÕES POR ITEM:\n${prodListaTxt}`;
-                    
-                    const vdsMes = todasVendas.filter(v => { const d = v.dataObj || v.data.split('/').reverse().join('-'); return d.includes(`${anoAtual}-${mesAtual}`); });
-                    const gstMes = todosGastos.filter(g => { const d = g.dataObj || g.data.split('/').reverse().join('-'); return d.includes(`${anoAtual}-${mesAtual}`); });
-                    const brutoMes = money(vdsMes.reduce((a,b)=>a+(b.total || 0), 0));
-                    const lucroMes = money(vdsMes.reduce((a,b)=>a+(b.lucro || 0), 0));
-                    const gastosMes = money(gstMes.reduce((a,b)=>a+(b.valor || 0), 0));
+                let prodSoma = {};
+                vds.forEach(v => {
+                    v.itens.forEach(it => {
+                        if(!prodSoma[it.nome]) prodSoma[it.nome] = { qtd: 0, SelfMedida: it.medida || "UN" };
+                        prodSoma[it.nome].qtd += it.qtd;
+                    });
+                });
 
-                    document.getElementById('resumo-mensal-v8').style.display = "block";
-                    document.getElementById('gerente-hr-1').style.display = "block";
-                    document.getElementById('resumo-mensal-v8').innerHTML = `📊 RESUMO MENSAL (${mesAtual}/${anoAtual})\nTOTAL VENDIDO: R$ ${brutoMes.toFixed(2)}\nLUCRO ESTIMADO: R$ ${lucroMes.toFixed(2)}\nGASTOS TOTAIS: R$ ${gastosMes.toFixed(2)}\nLUCRO LÍQUIDO: R$ ${(lucroMes - gastosMes).toFixed(2)}`;
+                let prodListaTxt = Object.keys(prodSoma).map(nome => `${nome.padEnd(20)}: ${prodSoma[nome].qtd.toFixed(3)} ${prodSoma[nome].SelfMedida}`).join('\n');
+
+                if(nivelAcessoAtual === "MASTER") {
+                    document.getElementById('resumo-html-v8').innerHTML = `RESUMO DO PERÍODO:\nBRUTO PRODUTOS: R$ ${brutoProdutos.toFixed(2)}\n(-) DESCONTOS: R$ ${totDescontos.toFixed(2)}\n(+) TAXAS: R$ ${totTaxas.toFixed(2)}\n(=) LÍQUIDO: R$ ${totVendasLiquido.toFixed(2)}\n(💰) LUCRO BRUTO: R$ ${totLucro.toFixed(2)}\n(-) SAÍDAS/GASTOS: R$ ${totGastos.toFixed(2)}`;
+                    document.getElementById('resumo-mensal-v8').innerHTML = `MEIOS DE PAGAMENTO LIQUIDOS:\n💵 DINHEIRO : R$ ${abrirCampos.toFixed(2)}\n⚡ PIX      : R$ ${vPix.toFixed(2)}\n💳 DÉBITO   : R$ ${vDebito.toFixed(2)}\n💳 CRÉDITO  : R$ ${vCredito.toFixed(2)}\n\nPRODUTOS VENDIDOS NO INTERVALO:\n${prodListaTxt || 'Nenhum item vendido'}`;
                 } else {
-                    document.getElementById('resumo-html-v8').innerHTML = `DIVISÃO DE ENTRADAS:\nDINHEIRO: R$ ${money(abrirCampos).toFixed(2)}\nPIX:      R$ ${money(vPix).toFixed(2)}\nDÉBITO:   R$ ${money(vDebito).toFixed(2)}\nCRÉDITO:  R$ ${money(vCredito).toFixed(2)}\n----------------------\nDIGITAÇÕES POR ITEM:\n${prodListaTxt}`;
-                    
-                    document.getElementById('resumo-mensal-v8').style.display = "none";
-                    document.getElementById('gerente-hr-1').style.display = "none";
+                    document.getElementById('resumo-html-v8').innerHTML = `SISTEMA OPERANDO EM FLUXO NORMAL\nTOTAL LÍQUIDO VENDIDO: R$ ${totVendasLiquido.toFixed(2)}`;
+                    document.getElementById('resumo-mensal-v8').innerHTML = `PRODUTOS VENDIDOS NO INTERVALO:\n${prodListaTxt || 'Nenhum item vendido'}`;
                 }
 
-                const displayBtnGerente = (nivelAcessoAtual === "MASTER") ? "inline-block" : "none";
-
-                let htmlLista = `<h3>Vendas Detalhadas</h3>` + vds.slice().reverse().map(v => `<div class="venda-card"><b>#${v.id.substring(0,6)} - ${v.data} ${v.hora}</b> | Total: R$ ${v.total.toFixed(2)}<br>Pag: ${v.metodo} ${(nivelAcessoAtual === 'MASTER') ? '| Lucro: R$ '+v.lucro.toFixed(2) : ''}<div class="detalhe-itens-venda">${v.itens.map(it => `• ${it.nome} - ${it.qtd.toFixed(3)}${it.medida || ''}`).join('<br>')}</div><button onclick="reimprimirVendaPorId('${v.id}')" class="btn-reimprimir">REIMPRIMIR</button><button onclick="window.enviarWhatsAppHistorico('${v.id}')" class="btn-reimprimir" style="background: #25d366; color: white;">WHATSAPP</button><button onclick="estornarVenda('${v.id}')" class="btn-estornar" style="display: ${displayBtnGerente}">ESTORNAR</button></div>`).join('');
+                const displayBtnGerente = nivelAcessoAtual === "MASTER" ? "inline-block" : "none";
+                let htmlLista = `<h3>Histórico de Vendas</h3>` + vds.slice().reverse().map(v => `<div class="venda-card"><b>Venda #${v.id.substring(0,6)} - ${v.data} ${v.hora}</b><br>Cliente: ${v.cliente}<br>Total: R$ ${v.total.toFixed(2)} (${v.metodo})<br>${nivelAcessoAtual==='MASTER' ? 'Lucro: R$ '+v.lucro.toFixed(2) : ''}<div class="detalhe-itens-venda">${v.itens.map(it => `• ${it.nome} - ${it.qtd.toFixed(3)}${it.medida || ''}`).join('<br>')}</div><button onclick="reimprimirVendaPorId('${v.id}')" class="btn-reimprimir">REIMPRIMIR</button><button onclick="window.enviarWhatsAppHistorico('${v.id}')" class="btn-reimprimir" style="background: #25d366; color: white;">WHATSAPP</button><button onclick="estornarVenda('${v.id}')" class="btn-estornar" style="display: ${displayBtnGerente}">ESTORNAR</button></div>`).join('');
                 let htmlGastos = `<h3>Gastos Detalhados</h3>` + gst.slice().reverse().map(g => `<div class="gasto-card"><b>${g.desc} - ${g.data} ${g.hora}</b><br>Valor: R$ ${g.valor.toFixed(2)} <button onclick="excluirGasto('${g.id}')" style="color:red; border:1px solid red; background:white; cursor:pointer; font-size:10px; padding:2px 5px; border-radius:3px; display: ${displayBtnGerente}">DELETAR</button></div>`).join('');
-                
                 document.getElementById('historico-lista').innerHTML = htmlLista + "<hr>" + htmlGastos;
             });
         });
@@ -1086,7 +1219,7 @@
         });
     }
 
-    window.reimprimirVendaPorId = function(id) { 
+    window.reimprimirVendaPorId = function(id) {
         fbDatabase.ref(`vendas/${id}`).once("value", snapshot => {
             if(snapshot.exists()) imprimirCupom(snapshot.val());
         });
@@ -1100,194 +1233,27 @@
                 const v = snapshot.val();
                 const updates = {};
                 v.itens.forEach(item => {
-                    const p = produtosCache.find(prod => prod.nome === item.nome);
-                    if(p) { p.estoque += item.qtd; updates[`/produtos/${p.idAnterior || p.nome}`] = p; }
+                    const p = produtosCache.find(prod => prod.id === item.id);
+                    if(p) {
+                        p.estoque += item.qtd;
+                        updates[`/produtos/${p.id}`] = p;
+                    }
                 });
                 updates[`/vendas/${id}`] = null;
                 fbDatabase.ref().update(updates).then(() => {
-                    alert("Estornada!");
-                    renderizarRelatorio();
+                    alert("Venda estornada e itens devolvidos ao estoque!");
+                    renderizerRelatorio();
                     calcularSaldoGeral();
                 });
             }
         });
     }
 
-    window.excluirGasto = function(id) {
-        if(nivelAcessoAtual !== "MASTER") return alert("Apenas o Gerente pode excluir gastos!");
-        if(confirm("Remover este gasto permanente?")) {
-            fbDatabase.ref(`gastos/${id}`).remove().then(() => {
-                renderizarRelatorio();
-                calcularSaldoGeral();
-            });
-        }
-    }
-
-    function lancarGasto() {
-        const desc = document.getElementById('gasto-desc').value.toUpperCase(); 
-        const valor = money(parseFloat(document.getElementById('gasto-valor').value));
-        if (!desc || !valor) return alert("Preencha tudo!");
-        
-        const novoGastoRef = fbDatabase.ref('gastos').push();
-        const g = { id: novoGastoRef.key, desc, valor, data: new Date().toLocaleDateString('pt-BR'), dataObj: new Date().toISOString().split('T')[0], hora: new Date().toLocaleTimeString('pt-BR') };
-        
-        novoGastoRef.set(g).then(() => { 
-            document.getElementById('gasto-desc').value = ""; 
-            document.getElementById('gasto-valor').value = ""; 
-            renderizarRelatorio(); 
-            calcularSaldoGeral(); 
-        });
-    }
-
-    function imprimirCupom(v) {
-        document.getElementById('print-area').innerHTML = `<pre style="width:80mm; font-family:monospace; font-weight:bold; color: black; line-height:1.2;">
-----------------------------------------
-**JC PESCADOS** CNPJ: 40.086.457/0001-85
-RUA ALBERTO LEAL NUNES, 1925
-----------------------------------------
-           NOTA FISCAL (NFC)
-----------------------------------------
-DATA: ${v.data}         HORA: ${v.hora}
-CUPOM: #${v.id.substring(0,6)}         
-CLIENTE: ${v.cliente}
-----------------------------------------
-ITEM                QTD     VALOR
-----------------------------------------
-${v.itens.map(i => `${i.nome.substring(0,18).padEnd(19)} ${i.qtd.toFixed(3)}${(i.medida || '').padEnd(2)} R$ ${money(i.venda*i.qtd).toFixed(2)}`).join('\n')}
-----------------------------------------
-SUBTOTAL:               R$ ${v.subtotal.toFixed(2).padStart(8)}
-DESCONTO:               R$ ${v.desconto.toFixed(2).padStart(8)}
-ACRÉSCIMO TAXA:         R$ ${v.taxa.toFixed(2).padStart(8)}
-----------------------------------------
-TOTAL PAGO:             R$ ${v.total.toFixed(2).padStart(8)}
-----------------------------------------
-PAGAMENTO: 
-${v.metodo.split(" | ").join("\n")}
-----------------------------------------
- Obrigado pela preferência e volte sempre!
-----------------------------------------</pre>`;
-        window.print();
-    }
-
     function imprimirRelatorioDia() {
-        const resumoTxt = document.getElementById('resumo-html-v8').innerText;
-        const saldoFinalTxt = (nivelAcessoAtual === "MASTER") ? `\n----------------------------------------\nSALDO FINAL CAIXA: ${document.getElementById('saldo-caixa-display').innerText}` : '';
-        document.getElementById('print-area').innerHTML = `<pre style="width:80mm; font-family:monospace; font-weight:bold;">\n----------------------------------------\n       RELATÓRIO JC PESCADOS         \n----------------------------------------\n${resumoTxt}${saldoFinalTxt}\n----------------------------------------</pre>`;
+        let txt = `<div>----------------------------------------<br><center><b>FECHAMENTO DE MOVIMENTO</b></center><br>----------------------------------------<br>EMISSÃO: ${new Date().toLocaleString('pt-BR')}<br>----------------------------------------<br>${document.getElementById('resumo-html-v8').innerText.replace(/\n/g, '<br>')}<br><br>${document.getElementById('resumo-mensal-v8').innerText.replace(/\n/g, '<br>')}</div>`;
+        document.getElementById('print-area').innerHTML = txt;
         window.print();
     }
-
-    function openTab(id, event) { 
-        if (id === 'estoque' || id === 'reposicao') {
-            if (nivelAcessoAtual !== "MASTER") { 
-                alert("Acesso restrito apenas ao Gerente!"); 
-                return; 
-            }
-        }
-        realizarMudancaAba(id, event);
-    }
-
-    function realizarMudancaAba(id, event) {
-        document.querySelectorAll('.content').forEach(c => c.classList.remove('active')); 
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); 
-        document.getElementById(id).classList.add('active'); 
-        
-        if(event && event.currentTarget) event.currentTarget.classList.add('active'); 
-        else { const btn = document.getElementById(`tab-${id}`); if(btn) btn.classList.add('active'); }
-
-        if(id === 'relatorio') renderizarRelatorio(); 
-        if(id === 'estoque') renderizarEstoque(); 
-        if(id === 'reposicao') renderizarGestaoReposicao();
-        calcularSaldoGeral(); 
-    }
-
-    function renderizarEstoque() { 
-        if(nivelAcessoAtual === "FUNCIONARIO") return;
-        
-        document.getElementById('tabela-estoque-corpo').innerHTML = produtosCache.map((p, index) => {
-            if(!p.idAnterior) p.idAnterior = p.nome;
-            
-            return `<tr>
-                <td style="padding:5px;"><input type="text" value="${p.nome}" id="nome-${index}" style="width:140px; text-align:left; font-weight:bold; padding:4px;"></td>
-                <td><input type="text" value="${p.medida || 'KG'}" id="med-${index}" style="width:50px; text-align:center; padding:4px;"></td>
-                <td><input type="text" value="${p.categoria}" id="cat-${index}" style="width:100px; text-align:center; padding:4px;"></td>
-                <td><input type="number" step="0.001" value="${p.estoque}" id="est-${index}" style="width:75px; text-align:center; padding:4px;"></td>
-                <td><input type="number" step="0.01" value="${p.custo}" id="cust-${index}" style="width:75px; text-align:center; padding:4px;"></td>
-                <td><input type="number" step="0.01" value="${p.venda}" id="vend-${index}" style="width:75px; text-align:center; padding:4px;"></td>
-                <td><button onclick="excluirProd('${p.idAnterior}')" style="color:red; font-weight:bold; border:none; background:none; cursor:pointer;">[X]</button></td>
-            </tr>`;
-        }).join(''); 
-        
-        produtosCache.forEach((p, index) => {
-            document.getElementById(`nome-${index}`).onchange = function() { updateCacheByIndex(index, 'nome', this.value.toUpperCase()); };
-            document.getElementById(`med-${index}`).onchange = function() { updateCacheByIndex(index, 'medida', this.value.toUpperCase()); };
-            document.getElementById(`cat-${index}`).onchange = function() { updateCacheByIndex(index, 'categoria', this.value.toUpperCase()); };
-            document.getElementById(`est-${index}`).onchange = function() { updateCacheByIndex(index, 'estoque', this.value); };
-            document.getElementById(`cust-${index}`).onchange = function() { updateCacheByIndex(index, 'custo', this.value); };
-            document.getElementById(`vend-${index}`).onchange = function() { updateCacheByIndex(index, 'venda', this.value); };
-        });
-    }
-    
-    function updateCacheByIndex(index, campo, valor) {
-        if(produtosCache[index]) {
-            if(campo === 'estoque' || campo === 'custo' || campo === 'venda') {
-                produtosCache[index][campo] = parseFloat(valor) || 0;
-            } else {
-                produtosCache[index][campo] = valor;
-            }
-        }
-    }
-    
-    function salvarConfig() { 
-        if(nivelAcessoAtual !== "MASTER") return;
-        
-        const nomesUnicos = new Set(produtosCache.map(p => p.nome.trim()));
-        if(nomesUnicos.size !== produtosCache.length) {
-            alert("Erro: Você não pode deixar dois produtos com o mesmo Nome!");
-            return;
-        }
-
-        const pacotes = {};
-        // Limpa a árvore antiga para reestruturar sob a nova propriedade 'categoria'
-        fbDatabase.ref("produtos").remove().then(() => {
-            produtosCache.forEach(p => {
-                // Remove qualquer rastro antigo do campo 'category' em inglês antes de enviar
-                if(p.category) delete p.category;
-                p.idAnterior = p.nome; 
-                pacotes[`/produtos/${p.nome}`] = p; 
-            });
-            
-            fbDatabase.ref().update(pacotes).then(() => { 
-                alert("Estoque Completo, Nomes, Medidas e Categorias Salvos com Sucesso!"); 
-                renderizarEstoque();
-            });
-        });
-    }
-    
-    function cadastrarNovo() {
-        if(nivelAcessoAtual !== "MASTER") return;
-        const n = document.getElementById('novo-nome').value.toUpperCase().trim(); 
-        const c = document.getElementById('nova-categoria').value.toUpperCase().trim() || "GERAL"; 
-        const m = document.getElementById('nova-medida').value; 
-        if(!n) return;
-        
-        // Cadastra usando 'categoria' por padrão
-        const novo = { nome: n, categoria: c, medida: m, estoque: 0, custo: 0, venda: 0, idAnterior: n };
-        fbDatabase.ref(`produtos/${n}`).set(novo).then(() => {
-            document.getElementById('novo-nome').value = ""; 
-            document.getElementById('nova-categoria').value = ""; 
-        });
-    }
-    
-    function excluirProd(chaveBanco) { 
-        if(nivelAcessoAtual !== "MASTER") return;
-        if(confirm(`Remover permanentemente o produto associado a chave [ ${chaveBanco} ]?`)) { 
-            fbDatabase.ref(`produtos/${chaveBanco}`).remove().then(() => {
-                sincronizarProdutosRealtime();
-            });
-        }
-    }
-    
-    setInterval(() => { let r = document.getElementById('relogio'); if(r) r.innerText = new Date().toLocaleString('pt-BR'); }, 1000);
 
     window.onload = init;
 </script>
